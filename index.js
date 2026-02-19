@@ -51,6 +51,13 @@ function saveJson(fileName, data) {
   }
 }
 
+
+const mongoose = require("mongoose");
+
+mongoose.connect("mongodb+srv://ORIONBOT:ORION66@cluster0.hmmh1ng.mongodb.net/?appName=Cluster0")
+  .then(() => console.log("MongoDB Connected ✅"))
+  .catch((err) => console.log(err));
+
 // ----------------------------------------------------
 // IN-MEMORY STORES (BACKED BY JSON)
 // ----------------------------------------------------
