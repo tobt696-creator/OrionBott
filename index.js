@@ -52,11 +52,10 @@ function saveJson(fileName, data) {
 }
 
 
-const mongoose = require("mongoose");
+require("dotenv").config();
 
-mongoose.connect("mongodb+srv://ORIONBOT:ORION66@cluster0.hmmh1ng.mongodb.net/?appName=Cluster0")
-  .then(() => console.log("MongoDB Connected ✅"))
-  .catch((err) => console.log(err));
+mongoose.connect(process.env.MONGO_URI)
+
 
 // ----------------------------------------------------
 // IN-MEMORY STORES (BACKED BY JSON)
