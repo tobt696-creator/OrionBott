@@ -337,6 +337,9 @@ async function sendLog(guild, embed) {
     console.error("Log Error:", err);
   }
 }
+app.get('/', (req, res) => {
+  res.send('Railway app is live');
+});
 
 client.on("clientReady", () => {
   console.log(`🤖 Bot online as ${client.user.tag}`);
