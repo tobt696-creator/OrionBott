@@ -83,8 +83,32 @@ const productSchema = new mongoose.Schema({
 
 
 const Product = mongoose.model("Product", productSchema);
+const ownedSchema = new mongoose.Schema(
+  {
+    userId: { type: String, required: true, index: true },
+    productId: { type: mongoose.Schema.Types.ObjectId, ref: "Product", required: true }
+  },
+  { timestamps: true }
+);
+
+ownedSchema.index({ userId: 1, productId: 1 }, { unique: true });
+
+const Owned = mongoose.model("Owned", ownedSchema);
+
+// ----------------------------------------------------
+// DISCORD BOT SETUP
+// ----------------------------------------------------
+const client = new Client({
+  intents: [
+    GatewayIntentBits.Guilds,
+    GatewayIntentBits.GuildMessages,
+    GatewayIntentBits.MessageContent,
+    GatewayIntentBits.DirectMessages,
+    GatewayIntentBits.GuildMembers
+  ],
+  partials: [Partials.Channel]
+});
           
-let ownedProducts = loadJson("owned.json", {}); 
 
 // OTHER PERSISTED STATE
 let warns = loadJson("warns.json", {});                 // warns[userId] = [ { reason, mod }, ... ]
@@ -220,33 +244,23 @@ app.post("/addProduct", async (req, res) => {
 // ----------------------------------------------------
 app.post("/removeProduct", async (req, res) => {
   const { productId } = req.body;
-
-  if (!productId) {
-    return res.json({ success: false, message: "Missing productId" });
-  }
+  if (!productId) return res.json({ success: false, message: "Missing productId" });
 
   try {
     const deleted = await Product.findByIdAndDelete(productId);
-    if (!deleted) {
-      return res.json({ success: false, message: "Invalid productId" });
-    }
+    if (!deleted) return res.json({ success: false, message: "Invalid productId" });
 
-    // Remove from owned lists
-    for (const userId in ownedProducts) {
-      ownedProducts[userId] = ownedProducts[userId].filter(id => id !== productId);
-    }
+    await Owned.deleteMany({ productId: new mongoose.Types.ObjectId(productId) });
 
-    saveJson("owned.json", ownedProducts);
 
     console.log("Product removed:", productId);
-
     return res.json({ success: true });
-
   } catch (err) {
     console.error("RemoveProduct Error:", err);
     return res.json({ success: false });
   }
 });
+
 // ----------------------------------------------------
 // ⭐ PRODUCT API: LIST PRODUCTS (for Roblox UI)
 // GET /products
@@ -275,10 +289,15 @@ app.get("/products", async (req, res) => {
 // ⭐ PRODUCT API: OWNED PRODUCTS (for Roblox UI)
 // GET /owned/:userId
 // ----------------------------------------------------
-app.get("/owned/:userId", (req, res) => {
-  const userId = String(req.params.userId);
-  const owned = ownedProducts[userId] || [];
-  return res.json({ owned });
+app.get("/owned/:userId", async (req, res) => {
+  try {
+    const userId = String(req.params.userId);
+    const rows = await Owned.find({ userId }).select("productId");
+    return res.json({ owned: rows.map(r => String(r.productId)) });
+  } catch (err) {
+    console.error("Owned fetch error:", err);
+    return res.json({ owned: [] });
+  }
 });
 
 
@@ -302,9 +321,13 @@ app.post("/whitelist/check", async (req, res) => {
       return res.json({ success: true, allowed: false, message: "Unknown product" });
     }
 
-    // Check ownership (you store product._id in ownedProducts[userId])
-    const owned = ownedProducts[String(userId)] || [];
-    const allowed = owned.includes(String(product._id));
+const ownedRow = await Owned.findOne({
+  userId: String(userId),
+  productId: product._id
+}).select("_id");
+
+const allowed = !!ownedRow;
+
 
     return res.json({
       success: true,
@@ -354,12 +377,13 @@ app.post("/purchase", async (req, res) => {
     // 3. Fetch Discord user (USING EXISTING CLIENT)
     const user = await client.users.fetch(discordId);
 
-    // 4. Save ownership
-    if (!ownedProducts[userId]) ownedProducts[userId] = [];
-    if (!ownedProducts[userId].includes(String(product._id))) {
-      ownedProducts[userId].push(String(product._id));
-      saveJson("owned.json", ownedProducts);
-    }
+// 4. Save ownership in Mongo
+await Owned.updateOne(
+  { userId: String(userId), productId: product._id },
+  { $setOnInsert: { userId: String(userId), productId: product._id } },
+  { upsert: true }
+);
+
 
     // 5. Send DM
     const fileBuffer = Buffer.from(product.fileDataBase64, "base64");
@@ -394,19 +418,7 @@ app.listen(PORT, () => {
   console.log(`🌐 Server running on port ${PORT}`);
 });
 
-// ----------------------------------------------------
-// DISCORD BOT SETUP
-// ----------------------------------------------------
-const client = new Client({
-  intents: [
-    GatewayIntentBits.Guilds,
-    GatewayIntentBits.GuildMessages,
-    GatewayIntentBits.MessageContent,
-    GatewayIntentBits.DirectMessages,
-    GatewayIntentBits.GuildMembers
-  ],
-  partials: [Partials.Channel]
-});
+
 
 // CHANNEL IDS
 const MODMAIL_CHANNEL = "1466828764184051944";
@@ -514,7 +526,7 @@ client.on("messageCreate", async (message) => {
   // ----------------------------------------------------
   // AUTO-MOD (EXAMPLE)
 // ----------------------------------------------------
-  const badWords = ["badword1", "badword2"];
+  const badWords = ["fuck", "shit","bitch"];
 
   if (badWords.some(w => message.content.toLowerCase().includes(w))) {
     try { await message.delete(); } catch {}
@@ -578,7 +590,9 @@ if (cmd === "!profile") {
   }
 
   // Owned products (keyed by Roblox userId)
-  const ownedIds = ownedProducts[String(robloxUserId)] || [];
+ const ownedRows = await Owned.find({ userId: String(robloxUserId) }).select("productId");
+const ownedIds = ownedRows.map(r => String(r.productId));
+
 
   let productLines = [];
   try {
@@ -716,6 +730,7 @@ if (cmd === "!profile") {
 
     return;
   }
+
 
   // ⭐ !Review <text>
   if (cmd === "!review") {
