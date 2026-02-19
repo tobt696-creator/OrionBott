@@ -17,7 +17,7 @@ app.use(express.urlencoded({ limit: "50mb", extended: true }));
 
 // ⭐ IMPORTANT: Let Railway choose the port
 const PORT = process.env.PORT || 3000;
-
+const mongoose = require('mongoose');
 // ----------------------------------------------------
 // DATA PERSISTENCE (Railway Volume)
 // ----------------------------------------------------
