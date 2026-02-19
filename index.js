@@ -499,22 +499,32 @@ client.on("messageCreate", async (message) => {
 // PUBLIC COMMANDS
 // ----------------------------------------------------
 // profile
-// ⭐ !Profile
+// ⭐ !Profile (supports !profile and !profile @user)
 if (cmd === "!profile") {
-const discordId = String(message.author.id).trim();
-const robloxUserId = discordToRoblox[discordId];
+  // If they mentioned someone, use that. Otherwise use the author.
+  const targetUser = message.mentions.users.first() || message.author;
+
+  const discordId = String(targetUser.id).trim();
+
+  // Use your reverse map (recommended)
+  const robloxUserId = discordToRoblox[discordId];
 
   if (!robloxUserId) {
     return message.reply({
       embeds: [
         new EmbedBuilder()
           .setTitle("🔗 Not Linked")
-          .setDescription("Your Discord isn’t linked to a Roblox account yet.\nUse `!pverify <code>` to link.")
+          .setDescription(
+            targetUser.id === message.author.id
+              ? "Your Discord isn’t linked to a Roblox account yet.\nUse `!pverify <code>` to link."
+              : `${targetUser.tag} is not linked to a Roblox account.`
+          )
           .setColor(0xff0000)
       ]
     });
   }
 
+  // Fetch Roblox username + avatar
   let robloxName = "Unknown";
   let headshotUrl = null;
 
@@ -525,6 +535,7 @@ const robloxUserId = discordToRoblox[discordId];
     console.error("Profile Roblox fetch error:", e);
   }
 
+  // Owned products (keyed by Roblox userId)
   const ownedIds = ownedProducts[String(robloxUserId)] || [];
 
   let productLines = [];
@@ -543,14 +554,14 @@ const robloxUserId = discordToRoblox[discordId];
   }
 
   const embed = new EmbedBuilder()
-    .setTitle("🧾 Your Profile")
+    .setTitle("🧾 Profile")
     .setColor(0x00ffea)
     .addFields(
       { name: "Discord", value: `<@${discordId}> (\`${discordId}\`)`, inline: false },
       { name: "Roblox", value: `**${robloxName}** (\`${robloxUserId}\`)`, inline: false },
       {
-        name: "🛒 Here are the products you own",
-        value: productLines.length ? productLines.join("\n") : "*You don’t own any products yet.*",
+        name: "🛒 Here are the products they own",
+        value: productLines.length ? productLines.join("\n") : "*No products owned yet.*",
         inline: false
       }
     )
@@ -574,7 +585,8 @@ const robloxUserId = discordToRoblox[discordId];
           value:
             "`!pverify <code>` – Link Roblox account\n" +
             "`!review <text>` – Submit a review\n" +
-            "`!coinflip` – Flip a coin"
+            "`!coinflip` – Flip a coin/n" +
+            "`!profile [@user]` – View profile and owned products"
         },
         {
           name: "🛡️ Staff Commands",
