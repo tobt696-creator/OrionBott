@@ -17,7 +17,7 @@ app.use(express.urlencoded({ limit: "50mb", extended: true }));
 
 // ⭐ IMPORTANT: Let Railway choose the port
 const PORT = process.env.PORT || 3000;
-const mongoose = require('mongoose');
+const mongoose = require("mongoose");
 // ----------------------------------------------------
 // DATA PERSISTENCE (Railway Volume)
 // ----------------------------------------------------
@@ -52,9 +52,16 @@ function saveJson(fileName, data) {
 }
 
 
-require("dotenv").config();
 
-mongoose.connect(process.env.MONGO_URI)
+mongoose.connect(process.env.MONGO_URI, {
+  useNewUrlParser: true,
+  useUnifiedTopology: true
+}).then(() => {
+  console.log("✅ MongoDB Connected");
+}).catch(err => {
+  console.error("❌ MongoDB Connection Error:", err);
+});
+
 
 
 // ----------------------------------------------------
@@ -63,10 +70,19 @@ mongoose.connect(process.env.MONGO_URI)
 let codeToUserId = loadJson("codes.json", {});          // codeToUserId["123456"] = "2010692028"
 let linkedAccounts = loadJson("linked.json", {});       // linkedAccounts["2010692028"] = "1403467428255633428"
 
-// PRODUCT SYSTEM STORES
-let products = loadJson("products.json", {});           // products[productId] = { id, name, description, imageId, devProductId, fileName, fileDataBase64 }
-let ownedProducts = loadJson("owned.json", {});         // ownedProducts[robloxUserId] = [productId, ...]
-let devProductToProductId = loadJson("devmap.json", {});// devProductToProductId[devProductId] = productId
+const productSchema = new mongoose.Schema({
+  name: String,
+  description: String,
+  imageId: String,
+  devProductId: { type: String, unique: true },
+  fileName: String,
+  fileDataBase64: String
+}, { timestamps: true });
+
+
+const Product = mongoose.model("Product", productSchema);
+          
+let ownedProducts = loadJson("owned.json", {}); 
 
 // OTHER PERSISTED STATE
 let warns = loadJson("warns.json", {});                 // warns[userId] = [ { reason, mod }, ... ]
@@ -148,81 +164,95 @@ app.post("/announce", async (req, res) => {
 // ⭐ PRODUCT API: ADD PRODUCT (from Discord bot)
 // body: { name, description, imageId, devProductId, fileName, fileData }
 // ----------------------------------------------------
-app.post("/addProduct", (req, res) => {
+app.post("/addProduct", async (req, res) => {
   const { name, description, imageId, devProductId, fileName, fileData } = req.body;
 
   if (!name || !description || !imageId || !devProductId || !fileName || !fileData) {
     return res.json({ success: false, message: "Missing product fields" });
   }
 
-  const productId = Date.now().toString(); // simple unique id
+  try {
+    const existing = await Product.findOne({ devProductId: String(devProductId) });
+    if (existing) {
+      return res.json({ success: false, message: "DevProductId already exists" });
+    }
 
-  products[productId] = {
-    id: productId,
-    name,
-    description,
-    imageId,
-    devProductId: String(devProductId),
-    fileName,
-    fileDataBase64: fileData
-  };
+    const product = new Product({
+      name,
+      description,
+      imageId,
+      devProductId: String(devProductId),
+      fileName,
+      fileDataBase64: fileData
+    });
 
-  devProductToProductId[String(devProductId)] = productId;
+    await product.save();
 
-  saveJson("products.json", products);
-  saveJson("devmap.json", devProductToProductId);
+    console.log("Product saved to Mongo:", product._id);
 
-  console.log("Product added:", products[productId]);
+    return res.json({ success: true, productId: product._id });
 
-  return res.json({ success: true, productId });
+  } catch (err) {
+    console.error("AddProduct Error:", err);
+    return res.json({ success: false });
+  }
 });
 
 // ----------------------------------------------------
 // ⭐ PRODUCT API: REMOVE PRODUCT
 // body: { productId }
 // ----------------------------------------------------
-app.post("/removeProduct", (req, res) => {
+app.post("/removeProduct", async (req, res) => {
   const { productId } = req.body;
 
-  if (!productId || !products[productId]) {
-    return res.json({ success: false, message: "Invalid productId" });
+  if (!productId) {
+    return res.json({ success: false, message: "Missing productId" });
   }
 
-  const devId = products[productId].devProductId;
-  delete products[productId];
+  try {
+    const deleted = await Product.findByIdAndDelete(productId);
+    if (!deleted) {
+      return res.json({ success: false, message: "Invalid productId" });
+    }
 
-  if (devId && devProductToProductId[devId]) {
-    delete devProductToProductId[devId];
+    // Remove from owned lists
+    for (const userId in ownedProducts) {
+      ownedProducts[userId] = ownedProducts[userId].filter(id => id !== productId);
+    }
+
+    saveJson("owned.json", ownedProducts);
+
+    console.log("Product removed:", productId);
+
+    return res.json({ success: true });
+
+  } catch (err) {
+    console.error("RemoveProduct Error:", err);
+    return res.json({ success: false });
   }
-
-  // Remove from owned lists
-  for (const userId in ownedProducts) {
-    ownedProducts[userId] = ownedProducts[userId].filter(id => id !== productId);
-  }
-
-  saveJson("products.json", products);
-  saveJson("devmap.json", devProductToProductId);
-  saveJson("owned.json", ownedProducts);
-
-  console.log("Product removed:", productId);
-
-  return res.json({ success: true });
 });
-
 // ----------------------------------------------------
 // ⭐ PRODUCT API: LIST PRODUCTS (for Roblox UI)
 // GET /products
 // ----------------------------------------------------
-app.get("/products", (req, res) => {
-  const list = Object.values(products).map(p => ({
-    id: p.id,
-    name: p.name,
-    description: p.description,
-    imageId: p.imageId,
-    devProductId: p.devProductId
-  }));
+app.get("/products", async (req, res) => {
+  try {
+    const products = await Product.find();
 
-  return res.json({ products: list });
+    const list = products.map(p => ({
+      id: p._id,
+      name: p.name,
+      description: p.description,
+      imageId: p.imageId,
+      devProductId: p.devProductId
+    }));
+
+    return res.json({ products: list });
+
+  } catch (err) {
+    console.error("Fetch Products Error:", err);
+    return res.json({ products: [] });
+  }
 });
 
 // ----------------------------------------------------
@@ -244,61 +274,62 @@ app.post("/purchase", async (req, res) => {
   const { userId, devProductId } = req.body;
 
   if (!userId || !devProductId) {
-    return res.json({ success: false, message: "Missing userId or devProductId" });
-  }
-
-  const productId = devProductToProductId[String(devProductId)];
-  if (!productId || !products[productId]) {
-    return res.json({ success: false, message: "Unknown product" });
-  }
-
-  const product = products[productId];
-
-  // Get Discord ID linked to this Roblox user
-  const discordId = linkedAccounts[userId];
-  if (!discordId) {
-    console.log("No linked Discord account for Roblox user:", userId);
-    return res.json({ success: false, message: "User not linked" });
+    return res.json({ success: false, message: "Missing fields" });
   }
 
   try {
+    // 1. Find product
+    const product = await Product.findOne({
+      devProductId: String(devProductId)
+    });
+
+    if (!product) {
+      return res.json({ success: false, message: "Unknown product" });
+    }
+
+    // 2. Get linked Discord ID
+    const discordId = linkedAccounts[userId];
+    if (!discordId) {
+      return res.json({ success: false, message: "User not linked" });
+    }
+
+    // 3. Fetch Discord user (USING EXISTING CLIENT)
     const user = await client.users.fetch(discordId);
 
-    // Convert stored base64 file back to buffer
+    // 4. Save ownership
+    if (!ownedProducts[userId]) ownedProducts[userId] = [];
+    if (!ownedProducts[userId].includes(String(product._id))) {
+      ownedProducts[userId].push(String(product._id));
+      saveJson("owned.json", ownedProducts);
+    }
+
+    // 5. Send DM
     const fileBuffer = Buffer.from(product.fileDataBase64, "base64");
 
-    // Send DM with file + description
     await user.send({
       embeds: [
         new EmbedBuilder()
-          .setTitle(`🎁 You received: ${product.name}`)
+          .setTitle(`🎁 Purchase Delivered`)
           .setDescription(product.description)
           .setColor(0x00ffea)
       ],
-      files: [
-        {
-          attachment: fileBuffer,
-          name: product.fileName
-        }
-      ]
+      files: [{
+        attachment: fileBuffer,
+        name: product.fileName
+      }]
     });
 
-    // Save ownership
-    if (!ownedProducts[userId]) ownedProducts[userId] = [];
-    if (!ownedProducts[userId].includes(productId)) {
-      ownedProducts[userId].push(productId);
-    }
-
-    saveJson("owned.json", ownedProducts);
-
-    console.log("DM sent to", discordId);
     return res.json({ success: true });
 
   } catch (err) {
-    console.error("Failed to DM user:", err);
-    return res.json({ success: false, message: "DM failed" });
+    console.error("Purchase error:", err);
+    return res.json({
+      success: false,
+      message: "Delivery failed"
+    });
   }
 });
+
 
 // ⭐ START WEB SERVER (Railway-compatible)
 app.listen(PORT, () => {
@@ -337,9 +368,6 @@ async function sendLog(guild, embed) {
     console.error("Log Error:", err);
   }
 }
-app.get('/', (req, res) => {
-  res.send('Railway app is live');
-});
 
 client.on("clientReady", () => {
   console.log(`🤖 Bot online as ${client.user.tag}`);
