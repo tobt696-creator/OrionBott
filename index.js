@@ -94,6 +94,20 @@ app.get("/status", (req, res) => {
   res.json({ online: true });
 });
 
+async function getRobloxUsername(userId) {
+  const url = `https://users.roblox.com/v1/users/${userId}`;
+  const { data } = await axios.get(url);
+  return data?.name || "Unknown";
+}
+
+async function getRobloxHeadshotUrl(userId) {
+  const url = `https://thumbnails.roblox.com/v1/users/avatar-headshot?userIds=${userId}&size=420x420&format=Png&isCircular=false`;
+  const { data } = await axios.get(url);
+
+  // data.data is usually an array like [{ imageUrl, state, targetId, ... }]
+  return data?.data?.[0]?.imageUrl || null;
+}
+
 // ----------------------------------------------------
 // ROBLOX → BOT: CREATE CODE
 // body: { userId: number, code: "123456" }
@@ -195,6 +209,76 @@ app.post("/addProduct", async (req, res) => {
     return res.json({ success: false });
   }
 });
+
+
+if (cmd === "!profile") {
+  // 1) Find the Roblox userId linked to this Discord user
+  const discordId = message.author.id;
+
+  // linkedAccounts is { robloxUserId: discordId }
+  const robloxUserId = Object.keys(linkedAccounts).find(
+    rbxId => linkedAccounts[rbxId] === discordId
+  );
+
+  if (!robloxUserId) {
+    return message.reply({
+      embeds: [
+        new EmbedBuilder()
+          .setTitle("🔗 Not Linked")
+          .setDescription("Your Discord isn’t linked to a Roblox account yet.\nUse `!pverify <code>` to link.")
+          .setColor(0xff0000)
+      ]
+    });
+  }
+
+  // 2) Fetch Roblox username + avatar
+  let robloxName = "Unknown";
+  let headshotUrl = null;
+
+  try {
+    robloxName = await getRobloxUsername(robloxUserId);
+    headshotUrl = await getRobloxHeadshotUrl(robloxUserId);
+  } catch (e) {
+    console.error("Profile Roblox fetch error:", e);
+  }
+
+  // 3) Fetch owned products
+  const ownedIds = ownedProducts[String(robloxUserId)] || [];
+
+  let productLines = [];
+  try {
+    if (ownedIds.length > 0) {
+      const products = await Product.find({ _id: { $in: ownedIds } });
+
+      // Keep the order from ownedIds (optional but nice)
+      const byId = new Map(products.map(p => [String(p._id), p]));
+      productLines = ownedIds
+        .map(id => byId.get(String(id)))
+        .filter(Boolean)
+        .map(p => `• **${p.name}** (DevProductId: \`${p.devProductId}\`)`);
+    }
+  } catch (e) {
+    console.error("Profile product fetch error:", e);
+  }
+
+  const embed = new EmbedBuilder()
+    .setTitle("🧾 Your Profile")
+    .setColor(0x00ffea)
+    .addFields(
+      { name: "Discord", value: `<@${discordId}> (\`${discordId}\`)`, inline: false },
+      { name: "Roblox", value: `**${robloxName}** (\`${robloxUserId}\`)`, inline: false },
+      {
+        name: "🛒 Here are the products you own",
+        value: productLines.length ? productLines.join("\n") : "*You don’t own any products yet.*",
+        inline: false
+      }
+    )
+    .setTimestamp();
+
+  if (headshotUrl) embed.setThumbnail(headshotUrl);
+
+  return message.reply({ embeds: [embed] });
+}
 
 // ----------------------------------------------------
 // ⭐ PRODUCT API: REMOVE PRODUCT
