@@ -338,7 +338,7 @@ async function sendLog(guild, embed) {
   }
 }
 
-client.on("ready", () => {
+client.on("clientReady", () => {
   console.log(`🤖 Bot online as ${client.user.tag}`);
   console.log("Restarted at:", new Date().toLocaleString());
   client.user.setActivity("Monitoring Orion", { type: 3 });
