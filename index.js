@@ -21,7 +21,7 @@ const mongoose = require("mongoose");
 // ----------------------------------------------------
 // DATA PERSISTENCE (Railway Volume)
 // ----------------------------------------------------
-const DATA_DIR = "/app/data";
+const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, "data");
 
 if (!fs.existsSync(DATA_DIR)) {
   fs.mkdirSync(DATA_DIR, { recursive: true });
@@ -67,6 +67,10 @@ mongoose.connect(process.env.MONGO_URI)
 // ----------------------------------------------------
 let codeToUserId = loadJson("codes.json", {});          // codeToUserId["123456"] = "2010692028"
 let linkedAccounts = loadJson("linked.json", {});       // linkedAccounts["2010692028"] = "1403467428255633428"
+let discordToRoblox = {};
+for (const [rbxId, dId] of Object.entries(linkedAccounts)) {
+  discordToRoblox[String(dId).trim()] = String(rbxId).trim();
+}
 
 const productSchema = new mongoose.Schema({
   name: String,
@@ -498,12 +502,8 @@ client.on("messageCreate", async (message) => {
 // profile
 // ⭐ !Profile
 if (cmd === "!profile") {
-  const discordId = message.author.id;
-
-  // linkedAccounts is { robloxUserId: discordId }
-  const robloxUserId = Object.keys(linkedAccounts).find(
-    rbxId => linkedAccounts[rbxId] === discordId
-  );
+const discordId = String(message.author.id).trim();
+const robloxUserId = discordToRoblox[discordId];
 
   if (!robloxUserId) {
     return message.reply({
@@ -632,6 +632,7 @@ if (cmd === "!profile") {
 
     const discordId = message.author.id;
     linkedAccounts[userId] = discordId;
+    discordToRoblox[String(discordId).trim()] = String(userId).trim();
     delete codeToUserId[code];
 
     saveJson("linked.json", linkedAccounts);
