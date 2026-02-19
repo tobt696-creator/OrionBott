@@ -281,6 +281,48 @@ app.get("/owned/:userId", (req, res) => {
   return res.json({ owned });
 });
 
+
+
+// ----------------------------------------------------
+// ⭐ WHITELIST CHECK (for Roblox Module)
+// POST /whitelist/check
+// body: { userId, devProductId }
+// ----------------------------------------------------
+app.post("/whitelist/check", async (req, res) => {
+  const { userId, devProductId } = req.body;
+
+  if (!userId || !devProductId) {
+    return res.json({ success: false, allowed: false, message: "Missing fields" });
+  }
+
+  try {
+    // Find the product by devProductId
+    const product = await Product.findOne({ devProductId: String(devProductId) });
+    if (!product) {
+      return res.json({ success: true, allowed: false, message: "Unknown product" });
+    }
+
+    // Check ownership (you store product._id in ownedProducts[userId])
+    const owned = ownedProducts[String(userId)] || [];
+    const allowed = owned.includes(String(product._id));
+
+    return res.json({
+      success: true,
+      allowed,
+      product: allowed
+        ? {
+            id: String(product._id),
+            name: product.name,
+            devProductId: product.devProductId
+          }
+        : null
+    });
+  } catch (err) {
+    console.error("Whitelist check error:", err);
+    return res.json({ success: false, allowed: false, message: "Server error" });
+  }
+});
+
 // ----------------------------------------------------
 // ⭐ PRODUCT API: PURCHASE (from Roblox)
 // body: { userId, devProductId }
@@ -547,7 +589,7 @@ if (cmd === "!profile") {
       productLines = ownedIds
         .map(id => byId.get(String(id)))
         .filter(Boolean)
-        .map(p => `• **${p.name}** (DevProductId: \`${p.devProductId}\`)`);
+        .map(p => `• **${p.name}**`);
     }
   } catch (e) {
     console.error("Profile product fetch error:", e);
