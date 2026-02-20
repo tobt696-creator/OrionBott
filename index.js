@@ -73,6 +73,7 @@ for (const [rbxId, dId] of Object.entries(linkedAccounts)) {
 }
 
 const productSchema = new mongoose.Schema({
+  hub: { type: String, required: true },
   name: String,
   description: String,
   imageId: String,
@@ -136,6 +137,20 @@ async function getRobloxHeadshotUrl(userId) {
   return data?.data?.[0]?.imageUrl || null;
 }
 
+
+app.post("/migrate/hub", async (req, res) => {
+  const key = req.headers["x-admin-key"];
+  if (!key || key !== process.env.ADMIN_KEY) {
+    return res.status(401).json({ success: false, message: "Unauthorized" });
+  }
+
+  const result = await Product.updateMany(
+    { hub: { $exists: false } },
+    { $set: { hub: "Orion" } }
+  );
+
+  res.json({ success: true, modified: result.modifiedCount });
+});
 // ----------------------------------------------------
 // ROBLOX → BOT: CREATE CODE
 // body: { userId: number, code: "123456" }
@@ -205,10 +220,16 @@ app.post("/announce", async (req, res) => {
 // body: { name, description, imageId, devProductId, fileName, fileData }
 // ----------------------------------------------------
 app.post("/addProduct", async (req, res) => {
-  const { name, description, imageId, devProductId, fileName, fileData } = req.body;
+  const { hub, name, description, imageId, devProductId, fileName, fileData } = req.body;
 
-  if (!name || !description || !imageId || !devProductId || !fileName || !fileData) {
+  if (!hub || !name || !description || !imageId || !devProductId || !fileName || !fileData) {
     return res.json({ success: false, message: "Missing product fields" });
+  }
+
+  // Optional: validate hub
+  const allowedHubs = ["Orion", "Nova Lighting", "Sunlight Solutions"];
+  if (!allowedHubs.includes(hub)) {
+    return res.json({ success: false, message: "Invalid hub" });
   }
 
   try {
@@ -218,6 +239,7 @@ app.post("/addProduct", async (req, res) => {
     }
 
     const product = new Product({
+      hub, // ✅ save hub
       name,
       description,
       imageId,
@@ -227,17 +249,12 @@ app.post("/addProduct", async (req, res) => {
     });
 
     await product.save();
-
-    console.log("Product saved to Mongo:", product._id);
-
     return res.json({ success: true, productId: product._id });
-
   } catch (err) {
     console.error("AddProduct Error:", err);
     return res.json({ success: false });
   }
 });
-
 // ----------------------------------------------------
 // ⭐ PRODUCT API: REMOVE PRODUCT
 // body: { productId }
@@ -271,6 +288,7 @@ app.get("/products", async (req, res) => {
 
     const list = products.map(p => ({
       id: p._id,
+      hub: p.hub, 
       name: p.name,
       description: p.description,
       imageId: p.imageId,
@@ -799,113 +817,141 @@ const ownedIds = ownedRows.map(r => String(r.productId));
   // ----------------------------------------------------
   if (!message.member.permissions.has(PermissionsBitField.Flags.Administrator)) return;
 
-  // ⭐ !addproduct
-  if (cmd === "!addproduct") {
-    // DM-based flow
-    const dm = await message.author.send({
-      embeds: [
-        new EmbedBuilder()
-          .setTitle("🛒 Add New Product")
-          .setDescription("I'll ask you for product details. Reply within 60 seconds for each step.")
-          .setColor(0x00ffea)
-      ]
-    }).catch(() => null);
+// ⭐ !addproduct
+if (cmd === "!addproduct") {
+  const dm = await message.author.send({
+    embeds: [
+      new EmbedBuilder()
+        .setTitle("🛒 Add New Product")
+        .setDescription("I'll ask you for product details. Reply within 60 seconds for each step.")
+        .setColor(0x00ffea)
+    ]
+  }).catch(() => null);
 
-    if (!dm) {
-      return message.reply("I couldn't DM you. Please enable DMs and try again.");
-    }
+  if (!dm) {
+    return message.reply("I couldn't DM you. Please enable DMs and try again.");
+  }
 
-    const ask = async (question) => {
-      await dm.channel.send({
-        embeds: [
-          new EmbedBuilder()
-            .setDescription(question)
-            .setColor(0x00ffea)
-        ]
-      });
+  const HUBS = ["Orion", "Nova Lighting", "Sunlight Solutions"];
 
-      const collected = await dm.channel.awaitMessages({
-        filter: m => m.author.id === message.author.id,
-        max: 1,
-        time: 60000
-      });
+  function detectHub(text) {
+    const t = String(text || "").toLowerCase();
+    if (t.includes("orion") || t === "o") return "Orion";
+    if (t.includes("nova") || t === "n") return "Nova Lighting";
+    if (t.includes("sun") || t.includes("sunlight") || t === "s") return "Sunlight Solutions";
+    return null;
+  }
 
-      if (!collected.size) return null;
-      return collected.first();
-    };
-
-    const nameMsg = await ask("What is the **Product Name**?");
-    if (!nameMsg) return dm.channel.send("⏳ Timed out.");
-    const productName = nameMsg.content;
-
-    const descMsg = await ask("What is the **Product Description**?");
-    if (!descMsg) return dm.channel.send("⏳ Timed out.");
-    const productDescription = descMsg.content;
-
-    const imgMsg = await ask("What is the **Product Image ID**? (Roblox asset ID)");
-    if (!imgMsg) return dm.channel.send("⏳ Timed out.");
-    const imageId = imgMsg.content;
-
-    const devMsg = await ask("What is the **Developer Product ID**?");
-    if (!devMsg) return dm.channel.send("⏳ Timed out.");
-    const devProductId = devMsg.content;
-
+  const ask = async (question) => {
     await dm.channel.send({
-      embeds: [
-        new EmbedBuilder()
-          .setDescription("Please upload the **file** that buyers will receive.")
-          .setColor(0x00ffea)
-      ]
+      embeds: [new EmbedBuilder().setDescription(question).setColor(0x00ffea)]
     });
 
-    const fileCollected = await dm.channel.awaitMessages({
-      filter: m => m.author.id === message.author.id && m.attachments.size > 0,
+    const collected = await dm.channel.awaitMessages({
+      filter: m => m.author.id === message.author.id,
       max: 1,
       time: 60000
     });
 
-    if (!fileCollected.size) {
-      return dm.channel.send("⏳ Timed out. No file received.");
-    }
+    if (!collected.size) return null;
+    return collected.first();
+  };
 
-    const file = fileCollected.first().attachments.first();
-    const fileBuffer = await axios.get(file.url, { responseType: "arraybuffer" }).then(r => r.data);
+  // 1) Hub first
+  const hubMsg = await ask(
+    "Which hub should I add it to?\n" +
+    "• Orion\n" +
+    "• Nova Lighting\n" +
+    "• Sunlight Solutions"
+  );
+  if (!hubMsg) return dm.channel.send("⏳ Timed out.");
 
-    try {
-      await axios.post("https://orionbot-production.up.railway.app/addProduct", {
-        name: productName,
-        description: productDescription,
-        imageId,
-        devProductId,
-        fileName: file.name,
-        fileData: Buffer.from(fileBuffer).toString("base64")
-      });
+  let hub = detectHub(hubMsg.content);
 
-      dm.channel.send({
-        embeds: [
-          new EmbedBuilder()
-            .setTitle("✅ Product Added")
-            .setDescription(`**${productName}** has been added to the shop.`)
-            .setColor(0x00ff00)
-        ]
-      });
-
-      sendLog(
-        message.guild,
-        new EmbedBuilder()
-          .setTitle("🛒 Product Added")
-          .setDescription(`Product **${productName}** created by ${message.author.tag}.`)
-          .setColor(0x00ffea)
-          .setTimestamp()
-      );
-
-    } catch (err) {
-      console.error("AddProduct Error:", err);
-      dm.channel.send("❌ Failed to save product. Check server logs.");
-    }
-
-    return;
+  let tries = 0;
+  while (!hub && tries < 2) {
+    tries++;
+    const retry = await ask(`I did not catch that. Pick one: ${HUBS.join(", ")}.`);
+    if (!retry) return dm.channel.send("⏳ Timed out.");
+    hub = detectHub(retry.content);
   }
+
+  if (!hub) return dm.channel.send("❌ Cancelled. Hub not selected.");
+
+  // 2) Product fields
+  const nameMsg = await ask("What is the **Product Name**?");
+  if (!nameMsg) return dm.channel.send("⏳ Timed out.");
+  const productName = nameMsg.content;
+
+  const descMsg = await ask("What is the **Product Description**?");
+  if (!descMsg) return dm.channel.send("⏳ Timed out.");
+  const productDescription = descMsg.content;
+
+  const imgMsg = await ask("What is the **Product Image ID**? (Roblox asset ID)");
+  if (!imgMsg) return dm.channel.send("⏳ Timed out.");
+  const imageId = imgMsg.content;
+
+  const devMsg = await ask("What is the **Developer Product ID**?");
+  if (!devMsg) return dm.channel.send("⏳ Timed out.");
+  const devProductId = devMsg.content;
+
+  // 3) File upload
+  await dm.channel.send({
+    embeds: [
+      new EmbedBuilder()
+        .setDescription("Please upload the **file** that buyers will receive.")
+        .setColor(0x00ffea)
+    ]
+  });
+
+  const fileCollected = await dm.channel.awaitMessages({
+    filter: m => m.author.id === message.author.id && m.attachments.size > 0,
+    max: 1,
+    time: 60000
+  });
+
+  if (!fileCollected.size) {
+    return dm.channel.send("⏳ Timed out. No file received.");
+  }
+
+  const file = fileCollected.first().attachments.first();
+  const fileBuffer = await axios.get(file.url, { responseType: "arraybuffer" }).then(r => r.data);
+
+  try {
+    await axios.post("https://orionbot-production.up.railway.app/addProduct", {
+      hub,
+      name: productName,
+      description: productDescription,
+      imageId,
+      devProductId,
+      fileName: file.name,
+      fileData: Buffer.from(fileBuffer).toString("base64")
+    });
+
+    dm.channel.send({
+      embeds: [
+        new EmbedBuilder()
+          .setTitle("✅ Product Added")
+          .setDescription(`**${productName}** added to **${hub}**.`)
+          .setColor(0x00ff00)
+      ]
+    });
+
+    sendLog(
+      message.guild,
+      new EmbedBuilder()
+        .setTitle("🛒 Product Added")
+        .setDescription(`Product **${productName}** created by ${message.author.tag}.`)
+        .setColor(0x00ffea)
+        .setTimestamp()
+    );
+  } catch (err) {
+    console.error("AddProduct Error:", err);
+    dm.channel.send("❌ Failed to save product. Check server logs.");
+  }
+
+  return;
+}
 
   // ⭐ !removeproduct
   if (cmd === "!removeproduct") {
@@ -936,7 +982,9 @@ const ownedIds = ownedRows.map(r => String(r.productId));
       return dm.channel.send("There are currently no products.");
     }
 
-    let desc = list.map(p => `**ID:** ${p.id}\n**Name:** ${p.name}\n**DevProductId:** ${p.devProductId}`).join("\n\n");
+   let desc = list.map(p =>
+  `**ID:** ${p.id}\n**Hub:** ${p.hub || "Unknown"}\n**Name:** ${p.name}\n**DevProductId:** ${p.devProductId}`
+).join("\n\n");
 
     await dm.channel.send({
       embeds: [
