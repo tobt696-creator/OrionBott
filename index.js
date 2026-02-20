@@ -261,17 +261,6 @@ app.post("/removeProduct", async (req, res) => {
   }
 });
 
-client.on("messageCreate", message => {
-  const msg = message.content.toLowerCase();
-
-  if (msg.includes("alex")) {
-    message.channel.send("alex is the best owner ever");
-  }
-
-  if (msg.includes("aj")) {
-    message.channel.send("AJ IS SMELLY");
-  }
-});
 // ----------------------------------------------------
 // ⭐ PRODUCT API: LIST PRODUCTS (for Roblox UI)
 // GET /products
