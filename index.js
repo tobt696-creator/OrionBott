@@ -843,7 +843,7 @@ if (cmd === "!addproduct") {
     return message.reply("I couldn't DM you. Please enable DMs and try again.");
   }
 
-  const HUBS = ["Orion", "Nova Lighting", "Sunlight Solutions"];
+const HUBS = ["Orion", "Nova Lighting", "Sunlight Solutions"];
 
 function detectHub(text) {
   const clean = String(text || "").trim().toLowerCase();
@@ -931,15 +931,25 @@ const hubMsg = await ask(
   const fileBuffer = await axios.get(file.url, { responseType: "arraybuffer" }).then(r => r.data);
 
   try {
-    await axios.post("https://orionbot-production.up.railway.app/addProduct", {
-      hub: hub,
-      name: productName,
-      description: productDescription,
-      imageId,
-      devProductId,
-      fileName: file.name,
-      fileData: Buffer.from(fileBuffer).toString("base64")
-    });
+const res = await axios.post(
+  "https://orionbot-production.up.railway.app/addProduct",
+  {
+    hub: hub,
+    name: productName,
+    description: productDescription,
+    imageId,
+    devProductId,
+    fileName: file.name,
+    fileData: Buffer.from(fileBuffer).toString("base64")
+  }
+);
+
+if (!res.data?.success) {
+  console.error("AddProduct rejected:", res.data);
+  return dm.channel.send(
+    `❌ Failed: ${res.data?.message || "Unknown error"}`
+  );
+}
 
     dm.channel.send({
       embeds: [
