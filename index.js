@@ -60,7 +60,34 @@ mongoose.connect(process.env.MONGO_URI)
   console.error("❌ MongoDB Connection Error:", err);
 });
 
+// ----------------------------------------------------
+// DOWNTIME STATE (MongoDB)
+// ----------------------------------------------------
+const downtimeSchema = new mongoose.Schema(
+  {
+    key: { type: String, unique: true, default: "global" },
+    enabled: { type: Boolean, default: false },
+    updatedBy: { type: String, default: "" }
+  },
+  { timestamps: true }
+);
 
+const Downtime = mongoose.model("Downtime", downtimeSchema);
+
+async function getDowntimeEnabled() {
+  const doc = await Downtime.findOne({ key: "global" }).lean();
+  return !!doc?.enabled;
+}
+
+async function setDowntimeEnabled(enabled, updatedBy = "") {
+const doc = await Downtime.findOneAndUpdate(
+  { key: "global" },
+  { $set: { enabled: !!enabled, updatedBy } },
+  { upsert: true, returnDocument: "after" }
+).lean();;
+
+  return !!doc?.enabled;
+}
 
 // ----------------------------------------------------
 // IN-MEMORY STORES (BACKED BY JSON)
@@ -377,34 +404,7 @@ app.get("/owned/:userId", async (req, res) => {
   }
 });
 
-// ----------------------------------------------------
-// DOWNTIME STATE (MongoDB)
-// ----------------------------------------------------
-const downtimeSchema = new mongoose.Schema(
-  {
-    key: { type: String, unique: true, default: "global" },
-    enabled: { type: Boolean, default: false },
-    updatedBy: { type: String, default: "" }
-  },
-  { timestamps: true }
-);
 
-const Downtime = mongoose.model("Downtime", downtimeSchema);
-
-async function getDowntimeEnabled() {
-  const doc = await Downtime.findOne({ key: "global" }).lean();
-  return !!doc?.enabled;
-}
-
-async function setDowntimeEnabled(enabled, updatedBy = "") {
-  const doc = await Downtime.findOneAndUpdate(
-    { key: "global" },
-    { $set: { enabled: !!enabled, updatedBy } },
-    { upsert: true, new: true }
-  ).lean();
-
-  return !!doc?.enabled;
-}
 
 // ----------------------------------------------------
 // ⭐ WHITELIST CHECK (for Roblox Module)
