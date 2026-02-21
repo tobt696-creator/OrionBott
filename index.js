@@ -115,7 +115,7 @@ const client = new Client({
 let warns = loadJson("warns.json", {});                 // warns[userId] = [ { reason, mod }, ... ]
 let lastNumberData = loadJson("counting.json", { lastNumber: 0 });
 let lastNumber = lastNumberData.lastNumber || 0;
-
+let downtimeState = loadJson("downtime.json", { enabled: false });
 // ----------------------------------------------------
 // BASIC STATUS ENDPOINT
 // ----------------------------------------------------
@@ -265,6 +265,45 @@ if (!fixedHub) {
     console.error("AddProduct Error:", err);
     return res.json({ success: false });
   }
+});
+
+
+// ----------------------------------------------------
+// GET downtime state (Roblox can poll if needed)
+// ----------------------------------------------------
+app.get("/downtime", (req, res) => {
+  res.json({ enabled: !!downtimeState.enabled });
+});
+
+// ----------------------------------------------------
+// SET downtime state (admin only) + broadcast to Roblox
+// POST /downtime  body: { enabled: true/false }
+// header: x-admin-key: <ADMIN_KEY>
+// ----------------------------------------------------
+app.post("/downtime", async (req, res) => {
+  const key = req.headers["x-admin-key"];
+  if (!key || key !== process.env.ADMIN_KEY) {
+    return res.status(401).json({ success: false, message: "Unauthorized" });
+  }
+
+  const enabled = !!req.body?.enabled;
+
+  downtimeState.enabled = enabled;
+  saveJson("downtime.json", downtimeState);
+
+  // Broadcast to Roblox live servers using Messaging Service (Open Cloud)
+  try {
+    await axios.post(
+      `https://apis.roblox.com/messaging-service/v1/universes/${process.env.UNIVERSE_ID}/topics/DowntimeEvent`,
+      { message: JSON.stringify({ enabled }) },
+      { headers: { "x-api-key": process.env.ROBLOX_API_KEY } }
+    );
+  } catch (e) {
+    console.error("Downtime broadcast failed:", e.response?.data || e);
+    // still return success because state is saved
+  }
+
+  return res.json({ success: true, enabled });
 });
 // ----------------------------------------------------
 // ⭐ PRODUCT API: REMOVE PRODUCT
@@ -670,8 +709,8 @@ const ownedIds = ownedRows.map(r => String(r.productId));
           value:
             "`!pverify <code>` – Link Roblox account\n" +
             "`!review <text>` – Submit a review\n" +
-            "`!coinflip` – Flip a coin/n" +
-            "`!profile [@user]` – View profile and owned products"
+            "`!coinflip` – Flip a coin\n" +
+            "`!profile [@user]` – View profile and owned products" 
         },
         {
           name: "🛡️ Staff Commands",
@@ -684,7 +723,9 @@ const ownedIds = ownedRows.map(r => String(r.productId));
             "`!giveaway <seconds> <prize>`\n" +
             "`!resetverify <RobloxUserId>`\n" +
             "`!addproduct` – Create a shop product\n" +
-            "`!removeproduct` – Remove a shop product"
+            "`!removeproduct` – Remove a shop product\n" +
+            "`!downtime` – Puts the game on downtime\n" +
+            "`!undowntime` – Removes downtime\n"
         },
         {
           name: "📢 Roblox Integration",
@@ -975,6 +1016,49 @@ if (!res.data?.success) {
 
   return;
 }
+
+
+
+// ⭐ !downtime
+if (cmd === "!downtime") {
+  try {
+    const res = await axios.post(
+      "https://orionbot-production.up.railway.app/downtime",
+      { enabled: true },
+      { headers: { "x-admin-key": process.env.ADMIN_KEY } }
+    );
+
+    if (!res.data?.success) {
+      return message.reply("❌ Failed to enable downtime.");
+    }
+
+    return message.reply("🛠️ Downtime enabled. Maintenance screen should show in-game.");
+  } catch (err) {
+    console.error("!downtime error:", err.response?.data || err);
+    return message.reply("❌ Error enabling downtime. Check logs.");
+  }
+}
+
+// ⭐ !undowntime
+if (cmd === "!undowntime") {
+  try {
+    const res = await axios.post(
+      "https://orionbot-production.up.railway.app/downtime",
+      { enabled: false },
+      { headers: { "x-admin-key": process.env.ADMIN_KEY } }
+    );
+
+    if (!res.data?.success) {
+      return message.reply("❌ Failed to disable downtime.");
+    }
+
+    return message.reply("✅ Downtime disabled. Players will rejoin shortly.");
+  } catch (err) {
+    console.error("!undowntime error:", err.response?.data || err);
+    return message.reply("❌ Error disabling downtime. Check logs.");
+  }
+}
+
 
   // ⭐ !removeproduct
   if (cmd === "!removeproduct") {
