@@ -227,10 +227,21 @@ app.post("/addProduct", async (req, res) => {
   }
 
   // Optional: validate hub
-  const allowedHubs = ["Orion", "Nova Lighting", "Sunlight Solutions"];
-  if (!allowedHubs.includes(hub)) {
-    return res.json({ success: false, message: "Invalid hub" });
-  }
+function normalizeHub(h) {
+  const clean = String(h || "").trim().toLowerCase();
+
+  if (clean === "orion") return "Orion";
+  if (clean === "nova lighting") return "Nova Lighting";
+  if (clean === "sunlight solutions") return "Sunlight Solutions";
+
+  return null;
+}
+
+const fixedHub = normalizeHub(hub);
+
+if (!fixedHub) {
+  return res.json({ success: false, message: "Invalid hub" });
+}
 
   try {
     const existing = await Product.findOne({ devProductId: String(devProductId) });
@@ -239,7 +250,7 @@ app.post("/addProduct", async (req, res) => {
     }
 
     const product = new Product({
-      hub, // ✅ save hub
+      hub: fixedHub,
       name,
       description,
       imageId,
@@ -834,13 +845,15 @@ if (cmd === "!addproduct") {
 
   const HUBS = ["Orion", "Nova Lighting", "Sunlight Solutions"];
 
-  function detectHub(text) {
-    const t = String(text || "").toLowerCase();
-    if (t.includes("orion") || t === "o") return "Orion";
-    if (t.includes("nova") || t === "n") return "Nova Lighting";
-    if (t.includes("sun") || t.includes("sunlight") || t === "s") return "Sunlight Solutions";
-    return null;
-  }
+function detectHub(text) {
+  const clean = String(text || "").trim().toLowerCase();
+
+  if (clean === "orion") return "Orion";
+  if (clean === "nova lighting") return "Nova Lighting";
+  if (clean === "sunlight solutions") return "Sunlight Solutions";
+
+  return null;
+}
 
   const ask = async (question) => {
     await dm.channel.send({
@@ -858,12 +871,12 @@ if (cmd === "!addproduct") {
   };
 
   // 1) Hub first
-  const hubMsg = await ask(
-    "Which hub should I add it to?\n" +
-    "• Orion\n" +
-    "• Nova Lighting\n" +
-    "• Sunlight Solutions"
-  );
+const hubMsg = await ask(
+  "Type EXACTLY one of these hub names:\n" +
+  "`Orion`\n" +
+  "`Nova Lighting`\n" +
+  "`Sunlight Solutions`"
+);
   if (!hubMsg) return dm.channel.send("⏳ Timed out.");
 
   let hub = detectHub(hubMsg.content);
@@ -919,7 +932,7 @@ if (cmd === "!addproduct") {
 
   try {
     await axios.post("https://orionbot-production.up.railway.app/addProduct", {
-      hub,
+      hub: hub,
       name: productName,
       description: productDescription,
       imageId,
