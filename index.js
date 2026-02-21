@@ -115,7 +115,7 @@ const client = new Client({
 let warns = loadJson("warns.json", {});                 // warns[userId] = [ { reason, mod }, ... ]
 let lastNumberData = loadJson("counting.json", { lastNumber: 0 });
 let lastNumber = lastNumberData.lastNumber || 0;
-let downtimeState = loadJson("downtime.json", { enabled: false });
+
 // ----------------------------------------------------
 // BASIC STATUS ENDPOINT
 // ----------------------------------------------------
@@ -268,11 +268,17 @@ if (!fixedHub) {
 });
 
 
+/// ----------------------------------------------------
+// GET downtime state (Roblox can poll)
 // ----------------------------------------------------
-// GET downtime state (Roblox can poll if needed)
-// ----------------------------------------------------
-app.get("/downtime", (req, res) => {
-  res.json({ enabled: !!downtimeState.enabled });
+app.get("/downtime", async (req, res) => {
+  try {
+    const enabled = await getDowntimeEnabled();
+    return res.json({ enabled });
+  } catch (e) {
+    console.error("GET /downtime error:", e);
+    return res.status(500).json({ enabled: false });
+  }
 });
 
 // ----------------------------------------------------
@@ -286,24 +292,27 @@ app.post("/downtime", async (req, res) => {
     return res.status(401).json({ success: false, message: "Unauthorized" });
   }
 
-  const enabled = !!req.body?.enabled;
-
-  downtimeState.enabled = enabled;
-  saveJson("downtime.json", downtimeState);
-
-  // Broadcast to Roblox live servers using Messaging Service (Open Cloud)
   try {
-    await axios.post(
-      `https://apis.roblox.com/messaging-service/v1/universes/${process.env.UNIVERSE_ID}/topics/DowntimeEvent`,
-      { message: JSON.stringify({ enabled }) },
-      { headers: { "x-api-key": process.env.ROBLOX_API_KEY } }
-    );
-  } catch (e) {
-    console.error("Downtime broadcast failed:", e.response?.data || e);
-    // still return success because state is saved
-  }
+    const enabled = !!req.body?.enabled;
 
-  return res.json({ success: true, enabled });
+    const saved = await setDowntimeEnabled(enabled, "api");
+
+    // Broadcast to Roblox live servers (Messaging Service)
+    try {
+      await axios.post(
+        `https://apis.roblox.com/messaging-service/v1/universes/${process.env.UNIVERSE_ID}/topics/DowntimeEvent`,
+        { message: JSON.stringify({ enabled: saved }) },
+        { headers: { "x-api-key": process.env.ROBLOX_API_KEY } }
+      );
+    } catch (e) {
+      console.error("Downtime broadcast failed:", e.response?.data || e);
+    }
+
+    return res.json({ success: true, enabled: saved });
+  } catch (e) {
+    console.error("POST /downtime error:", e);
+    return res.status(500).json({ success: false, message: "Server error" });
+  }
 });
 // ----------------------------------------------------
 // ⭐ PRODUCT API: REMOVE PRODUCT
@@ -368,7 +377,34 @@ app.get("/owned/:userId", async (req, res) => {
   }
 });
 
+// ----------------------------------------------------
+// DOWNTIME STATE (MongoDB)
+// ----------------------------------------------------
+const downtimeSchema = new mongoose.Schema(
+  {
+    key: { type: String, unique: true, default: "global" },
+    enabled: { type: Boolean, default: false },
+    updatedBy: { type: String, default: "" }
+  },
+  { timestamps: true }
+);
 
+const Downtime = mongoose.model("Downtime", downtimeSchema);
+
+async function getDowntimeEnabled() {
+  const doc = await Downtime.findOne({ key: "global" }).lean();
+  return !!doc?.enabled;
+}
+
+async function setDowntimeEnabled(enabled, updatedBy = "") {
+  const doc = await Downtime.findOneAndUpdate(
+    { key: "global" },
+    { $set: { enabled: !!enabled, updatedBy } },
+    { upsert: true, new: true }
+  ).lean();
+
+  return !!doc?.enabled;
+}
 
 // ----------------------------------------------------
 // ⭐ WHITELIST CHECK (for Roblox Module)
@@ -1029,13 +1065,14 @@ if (cmd === "!downtime") {
     );
 
     if (!res.data?.success) {
+      console.error("!downtime rejected:", res.data);
       return message.reply("❌ Failed to enable downtime.");
     }
 
-    return message.reply("🛠️ Downtime enabled. Maintenance screen should show in-game.");
+    return message.reply("🛠️ Downtime enabled.");
   } catch (err) {
     console.error("!downtime error:", err.response?.data || err);
-    return message.reply("❌ Error enabling downtime. Check logs.");
+    return message.reply("❌ Error enabling downtime. Check Railway logs.");
   }
 }
 
@@ -1049,16 +1086,16 @@ if (cmd === "!undowntime") {
     );
 
     if (!res.data?.success) {
+      console.error("!undowntime rejected:", res.data);
       return message.reply("❌ Failed to disable downtime.");
     }
 
-    return message.reply("✅ Downtime disabled. Players will rejoin shortly.");
+    return message.reply("✅ Downtime disabled.");
   } catch (err) {
     console.error("!undowntime error:", err.response?.data || err);
-    return message.reply("❌ Error disabling downtime. Check logs.");
+    return message.reply("❌ Error disabling downtime. Check Railway logs.");
   }
 }
-
 
   // ⭐ !removeproduct
   if (cmd === "!removeproduct") {
