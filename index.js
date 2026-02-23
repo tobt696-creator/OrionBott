@@ -10,7 +10,7 @@ const axios = require("axios");
 const fs = require("fs");
 const path = require("path");
 require("dotenv").config();
-
+const luamin = require("luamin");
 const app = express();
 app.use(express.json({ limit: "50mb" }));
 app.use(express.urlencoded({ limit: "50mb", extended: true }));
@@ -18,6 +18,16 @@ app.use(express.urlencoded({ limit: "50mb", extended: true }));
 // ⭐ IMPORTANT: Let Railway choose the port
 const PORT = process.env.PORT || 3000;
 const mongoose = require("mongoose");
+// lumain ///
+function obfuscateLua(luaText) {
+  try {
+    return luamin.minify(luaText);
+  } catch (e) {
+    console.error("Luamin error:", e);
+    return null;
+  }
+}
+
 // ----------------------------------------------------
 // DATA PERSISTENCE (Railway Volume)
 // ----------------------------------------------------
@@ -899,6 +909,59 @@ const ownedIds = ownedRows.map(r => String(r.productId));
       ]
     });
   }
+///////// whiteist cmd///
+if (cmd === "!whitelist") {
+  // only admins can use
+  if (!message.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
+    return message.reply("No permission.");
+  }
+
+  const dm = await message.author.send("Send your .lua file here.").catch(() => null);
+  if (!dm) return message.reply("Enable DMs and try again.");
+
+  const collected = await dm.channel.awaitMessages({
+    filter: m =>
+      m.author.id === message.author.id &&
+      m.attachments.size > 0,
+    max: 1,
+    time: 120000
+  });
+
+  if (!collected.size) {
+    return dm.channel.send("Timed out. Run !whitelist again.");
+  }
+
+  const msg = collected.first();
+  const att = msg.attachments.first();
+
+  if (!att.name.toLowerCase().endsWith(".lua")) {
+    return dm.channel.send("That is not a .lua file.");
+  }
+
+  if (att.size > 400_000) {
+    return dm.channel.send("File too big. Keep it under 400KB.");
+  }
+
+  try {
+    const res = await axios.get(att.url, { responseType: "arraybuffer" });
+    const luaText = Buffer.from(res.data).toString("utf8");
+
+    const out = obfuscateLua(luaText);
+    if (!out) return dm.channel.send("Failed to obfuscate. Bad Lua.");
+
+    const outBuf = Buffer.from(out, "utf8");
+
+    await dm.channel.send({
+      content: "Here is your obfuscated script.",
+      files: [{ attachment: outBuf, name: att.name.replace(/\.lua$/i, ".obf.lua") }]
+    });
+
+    return;
+  } catch (e) {
+    console.error("Whitelist command error:", e);
+    return dm.channel.send("Error downloading or obfuscating file.");
+  }
+}
 
   // ----------------------------------------------------
   // ADMIN COMMANDS
