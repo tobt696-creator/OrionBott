@@ -116,7 +116,9 @@ const productSchema = new mongoose.Schema({
   imageId: String,
   devProductId: { type: String, unique: true },
   fileName: String,
-  fileDataBase64: String
+  fileDataBase64: String, // ← MUST have comma
+
+  scriptObfuscatedBase64: { type: String, default: "" }
 }, { timestamps: true });
 
 
@@ -188,6 +190,32 @@ app.post("/migrate/hub", async (req, res) => {
 
   res.json({ success: true, modified: result.modifiedCount });
 });
+
+
+app.post("/script/get", async (req, res) => {
+  const { userId, devProductId } = req.body;
+
+  if (!userId || !devProductId) {
+    return res.json({ ok: false, reason: "missing_fields" });
+  }
+
+  const product = await Product.findOne({ devProductId: String(devProductId) });
+  if (!product) return res.json({ ok: false, reason: "unknown_product" });
+
+  const owned = await Owned.findOne({
+    userId: String(userId),
+    productId: product._id
+  }).select("_id");
+
+  if (!owned) return res.json({ ok: false, reason: "not_owned" });
+
+  if (!product.scriptObfuscatedBase64) return res.json({ ok: false, reason: "no_script" });
+
+  return res.json({
+    ok: true,
+    luaBase64: product.scriptObfuscatedBase64
+  });
+});
 // ----------------------------------------------------
 // ROBLOX → BOT: CREATE CODE
 // body: { userId: number, code: "123456" }
@@ -220,6 +248,32 @@ app.get("/link/:userId", (req, res) => {
   }
 
   return res.json({ linked: true, discordId });
+});
+//// idk ///
+app.post("/admin/script/set", async (req, res) => {
+  const key = req.headers["x-admin-key"];
+  if (!key || key !== process.env.ADMIN_KEY) {
+    return res.status(401).json({ ok: false });
+  }
+
+  const { devProductId, luaBase64 } = req.body;
+
+  if (!devProductId || !luaBase64) {
+    return res.json({ ok: false, reason: "missing_fields" });
+  }
+
+  const product = await Product.findOne({
+    devProductId: String(devProductId)
+  });
+
+  if (!product) {
+    return res.json({ ok: false, reason: "unknown_product" });
+  }
+
+  product.scriptObfuscatedBase64 = String(luaBase64);
+  await product.save();
+
+  return res.json({ ok: true });
 });
 
 // ----------------------------------------------------
@@ -911,25 +965,51 @@ const ownedIds = ownedRows.map(r => String(r.productId));
   }
 ///////// whiteist cmd///
 if (cmd === "!whitelist") {
-  // only admins can use
+  // admin only
   if (!message.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
     return message.reply("No permission.");
   }
 
-  const dm = await message.author.send("Send your .lua file here.").catch(() => null);
+  // get products
+  const productsRes = await axios.get("https://orionbot-production.up.railway.app/products").catch(() => null);
+  const products = productsRes?.data?.products || [];
+  if (products.length === 0) {
+    return message.reply("No products found.");
+  }
+
+  const listText = products
+    .map((p, i) => `${i + 1}. ${p.name} (DevProductId: ${p.devProductId})`)
+    .join("\n");
+
+  const dm = await message.author.send(
+    "Reply with the **number** of the product to attach this script to:\n\n" + listText
+  ).catch(() => null);
+
   if (!dm) return message.reply("Enable DMs and try again.");
 
-  const collected = await dm.channel.awaitMessages({
-    filter: m =>
-      m.author.id === message.author.id &&
-      m.attachments.size > 0,
+  // wait product choice
+  const choice = await dm.channel.awaitMessages({
+    filter: m => m.author.id === message.author.id,
     max: 1,
     time: 120000
   });
 
-  if (!collected.size) {
-    return dm.channel.send("Timed out. Run !whitelist again.");
-  }
+  if (!choice.size) return dm.channel.send("Timed out.");
+
+  const index = Number(choice.first().content);
+  const selected = products[index - 1];
+  if (!selected) return dm.channel.send("Invalid selection.");
+
+  await dm.channel.send("Now upload the .lua file to obfuscate.");
+
+  // wait lua file
+  const collected = await dm.channel.awaitMessages({
+    filter: m => m.author.id === message.author.id && m.attachments.size > 0,
+    max: 1,
+    time: 120000
+  });
+
+  if (!collected.size) return dm.channel.send("Timed out. No file received.");
 
   const msg = collected.first();
   const att = msg.attachments.first();
@@ -943,23 +1023,42 @@ if (cmd === "!whitelist") {
   }
 
   try {
+    // download
     const res = await axios.get(att.url, { responseType: "arraybuffer" });
     const luaText = Buffer.from(res.data).toString("utf8");
 
+    // obfuscate
     const out = obfuscateLua(luaText);
     if (!out) return dm.channel.send("Failed to obfuscate. Bad Lua.");
 
     const outBuf = Buffer.from(out, "utf8");
 
+    // save to your server product
+    const saveRes = await axios.post(
+      "https://orionbot-production.up.railway.app/admin/script/set",
+      {
+        devProductId: selected.devProductId,
+        luaBase64: outBuf.toString("base64")
+      },
+      {
+        headers: { "x-admin-key": process.env.ADMIN_KEY }
+      }
+    );
+
+    if (!saveRes.data?.ok) {
+      return dm.channel.send("Saved failed.");
+    }f
+
+    // send file back too
     await dm.channel.send({
-      content: "Here is your obfuscated script.",
+      content: `Saved script to product: **${selected.name}**`,
       files: [{ attachment: outBuf, name: att.name.replace(/\.lua$/i, ".obf.lua") }]
     });
 
     return;
   } catch (e) {
     console.error("Whitelist command error:", e);
-    return dm.channel.send("Error downloading or obfuscating file.");
+    return dm.channel.send("Error downloading, obfuscating, or saving.");
   }
 }
 
