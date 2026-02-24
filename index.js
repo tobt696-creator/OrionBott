@@ -32,8 +32,6 @@ function obfuscateLua(luaText) {
 }
 
 
-
-
 // ----------------------------------------------------
 // DATA PERSISTENCE (Railway Volume)
 // ----------------------------------------------------
@@ -1044,7 +1042,7 @@ local API = "https://orionbot-production.up.railway.app"
 local PRODUCT_ID = "${productId}"
 
 local function allowed()
-  local plr = Players.LocalPlayer or Players:GetPlayers()[1]
+  local plr = Players:GetPlayerFromCharacter(script.Parent)
   if not plr then return false end
 
   local body = HttpService:JSONEncode({
