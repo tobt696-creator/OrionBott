@@ -31,6 +31,9 @@ function obfuscateLua(luaText) {
   }
 }
 
+
+
+
 // ----------------------------------------------------
 // DATA PERSISTENCE (Railway Volume)
 // ----------------------------------------------------
@@ -465,15 +468,16 @@ const allowed = !!ownedRow;
   }
 });
 // ----------------------------------------------------
-// WHITELIST CHECK BY PRODUCT ID (Matches !profile ownership)
-// POST /whitelist/checkByProductId
-// body: { userId, productId }
+// WHITELIST CHECK BY PRODUCT ID (matches !profile ownership)
 // ----------------------------------------------------
+
+// POST (Roblox/Lua)
+// body: { userId, productId }
 app.post("/whitelist/checkByProductId", async (req, res) => {
-  const { userId, productId } = req.body;
+  const { userId, productId } = req.body || {};
 
   if (!userId || !productId) {
-    return res.json({ success: false, allowed: false, message: "Missing fields" });
+    return res.status(400).json({ success: false, allowed: false, message: "Missing fields" });
   }
 
   try {
@@ -484,8 +488,30 @@ app.post("/whitelist/checkByProductId", async (req, res) => {
 
     return res.json({ success: true, allowed: !!ownedRow });
   } catch (err) {
-    console.error("Whitelist checkByProductId error:", err);
-    return res.json({ success: false, allowed: false, message: "Server error" });
+    console.error("POST /whitelist/checkByProductId error:", err);
+    return res.status(500).json({ success: false, allowed: false, message: "Server error" });
+  }
+});
+
+// GET (browser test)
+// /whitelist/checkByProductId?userId=123&productId=65f...
+app.get("/whitelist/checkByProductId", async (req, res) => {
+  const { userId, productId } = req.query || {};
+
+  if (!userId || !productId) {
+    return res.status(400).json({ success: false, allowed: false, message: "Missing fields" });
+  }
+
+  try {
+    const ownedRow = await Owned.findOne({
+      userId: String(userId),
+      productId: new mongoose.Types.ObjectId(String(productId))
+    }).select("_id");
+
+    return res.json({ success: true, allowed: !!ownedRow });
+  } catch (err) {
+    console.error("GET /whitelist/checkByProductId error:", err);
+    return res.status(500).json({ success: false, allowed: false, message: "Server error" });
   }
 });
 // ----------------------------------------------------
