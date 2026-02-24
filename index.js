@@ -31,6 +31,7 @@ function obfuscateLua(luaText) {
   }
 }
 
+c
 // ----------------------------------------------------
 // DATA PERSISTENCE (Railway Volume)
 // ----------------------------------------------------
@@ -812,7 +813,9 @@ const ownedIds = ownedRows.map(r => String(r.productId));
             "`!addproduct` – Create a shop product\n" +
             "`!removeproduct` – Remove a shop product\n" +
             "`!downtime` – Puts the game on downtime\n" +
-            "`!undowntime` – Removes downtime\n"
+            "`!undowntime` – Removes downtime\n" +
+            "`!revoke` – revokes product\n" +
+            "`!grant` – grants product\n" 
         },
         {
           name: "📢 Roblox Integration",
@@ -1168,19 +1171,75 @@ if (cmd === "!grant") {
   const productId = await pickProductFromDropdown(message, products, "Grant Product");
   if (!productId) return;
 
-  try {
-    await Owned.updateOne(
-      { userId: String(robloxUserId), productId: new mongoose.Types.ObjectId(String(productId)) },
-      { $setOnInsert: { userId: String(robloxUserId), productId: new mongoose.Types.ObjectId(String(productId)) } },
-      { upsert: true }
-    );
+try {
+  // 1. Save ownership
+  await Owned.updateOne(
+    { userId: String(robloxUserId), productId: new mongoose.Types.ObjectId(String(productId)) },
+    { $setOnInsert: { userId: String(robloxUserId), productId: new mongoose.Types.ObjectId(String(productId)) } },
+    { upsert: true }
+  );
 
-    const prod = await Product.findById(productId).lean();
-    return message.reply(`✅ Granted **${prod?.name || "product"}** to <@${targetDiscordId}> (Roblox: \`${robloxUserId}\`).`);
-  } catch (e) {
-    console.error("!grant error:", e);
-    return message.reply("❌ Failed to grant product.");
+  // 2. Load full product
+  const product = await Product.findById(productId);
+  if (!product) return message.reply("❌ Product not found.");
+
+  // 3. Fetch Discord user
+  const targetUser = await client.users.fetch(targetDiscordId).catch(() => null);
+
+  // 4. Send DM with file (same as purchase)
+  if (targetUser) {
+    try {
+      const fileBuffer = Buffer.from(product.fileDataBase64, "base64");
+
+      await targetUser.send({
+        embeds: [
+          new EmbedBuilder()
+            .setTitle("🎁 Product Granted")
+            .setDescription(product.description || "You have been granted a product.")
+            .setColor(0x00ffea)
+        ],
+        files: [
+          {
+            attachment: fileBuffer,
+            name: product.fileName
+          }
+        ]
+      });
+    } catch (e) {
+      console.error("Grant DM failed:", e);
+      await message.reply("⚠️ Product granted but DM failed.");
+    }
   }
+
+  // 5. Log to product log channel (same style as purchase)
+  try {
+    const logChannel = await client.channels.fetch(PRODUCT_LOG_CHANNEL).catch(() => null);
+
+    if (logChannel && logChannel.isTextBased()) {
+      const logEmbed = new EmbedBuilder()
+        .setTitle("Product Granted")
+        .setColor(0x00ffea)
+        .addFields(
+          { name: "Product", value: product.name || "Unknown", inline: false },
+          { name: "User", value: `<@${targetDiscordId}> (\`${targetDiscordId}\`)`, inline: false },
+          { name: "Granted By", value: `${message.author.tag}`, inline: false }
+        )
+        .setTimestamp();
+
+      await logChannel.send({ embeds: [logEmbed] });
+    }
+  } catch (e) {
+    console.error("Grant log error:", e);
+  }
+
+  return message.reply(
+    `✅ Granted **${product.name}** to <@${targetDiscordId}> (Roblox: \`${robloxUserId}\`).`
+  );
+
+} catch (e) {
+  console.error("!grant error:", e);
+  return message.reply("❌ Failed to grant product.");
+}
 }
 
 // ----------------------------------------
