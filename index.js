@@ -475,60 +475,73 @@ app.post("/purchase", async (req, res) => {
   }
 
   try {
-    // 1. Find product
-    const product = await Product.findOne({
-      devProductId: String(devProductId)
-    });
-
+    // 1) Find product
+    const product = await Product.findOne({ devProductId: String(devProductId) });
     if (!product) {
       return res.json({ success: false, message: "Unknown product" });
     }
 
-    // 2. Get linked Discord ID
+    // 2) Get linked Discord ID
     const discordId = linkedAccounts[userId];
     if (!discordId) {
       return res.json({ success: false, message: "User not linked" });
     }
 
-    // 3. Fetch Discord user (USING EXISTING CLIENT)
+    // 3) Fetch Discord user
     const user = await client.users.fetch(discordId);
 
-// 4. Save ownership in Mongo
-await Owned.updateOne(
-  { userId: String(userId), productId: product._id },
-  { $setOnInsert: { userId: String(userId), productId: product._id } },
-  { upsert: true }
-);
+    // 4) Save ownership
+    await Owned.updateOne(
+      { userId: String(userId), productId: product._id },
+      { $setOnInsert: { userId: String(userId), productId: product._id } },
+      { upsert: true }
+    );
 
-
-    // 5. Send DM
+    // 5) DM delivery
     const fileBuffer = Buffer.from(product.fileDataBase64, "base64");
 
     await user.send({
       embeds: [
         new EmbedBuilder()
-          .setTitle(`🎁 Purchase Delivered`)
+          .setTitle("🎁 Purchase Delivered")
           .setDescription(product.description)
           .setColor(0x00ffea)
       ],
-      files: [{
-        attachment: fileBuffer,
-        name: product.fileName
-      }]
+      files: [
+        {
+          attachment: fileBuffer,
+          name: product.fileName
+        }
+      ]
     });
+
+    // 6) Product purchase log (channel)
+    try {
+      const logChannel = await client.channels.fetch(PRODUCT_LOG_CHANNEL).catch(() => null);
+
+      if (logChannel && logChannel.isTextBased()) {
+        const logEmbed = new EmbedBuilder()
+          .setTitle("Product Purchased")
+          .setColor(0x00ffea)
+          .addFields(
+            { name: "Product", value: product.name || "Unknown", inline: false },
+            { name: "Name", value: `<@${user.id}> (\`${user.id}\`)`, inline: false }
+          )
+          .setThumbnail(user.displayAvatarURL({ size: 256 }))
+          .setTimestamp();
+
+        await logChannel.send({ embeds: [logEmbed] });
+      }
+    } catch (e) {
+      console.error("Purchase log error:", e);
+    }
 
     return res.json({ success: true });
-
   } catch (err) {
     console.error("Purchase error:", err);
-    return res.json({
-      success: false,
-      message: "Delivery failed"
-    });
+    return res.json({ success: false, message: "Delivery failed" });
   }
 });
-
-
 // ⭐ START WEB SERVER (Railway-compatible)
 app.listen(PORT, () => {
   console.log(`🌐 Server running on port ${PORT}`);
@@ -542,7 +555,7 @@ const LOG_CHANNEL = "1403467428255633428";
 const WELCOME_CHANNEL = "1443713535887806616";
 const COUNTING_CHANNEL = "1452063879776436297";
 const REVIEW_CHANNEL = "1450909512520175668";
-
+const PRODUCT_LOG_CHANNEL = "1375200039839858738";
 // ----------------------------------------------------
 // LOG HELPER
 // ----------------------------------------------------
