@@ -1,10 +1,12 @@
-const express = require("express");
 const {
   Client,
   GatewayIntentBits,
   EmbedBuilder,
   PermissionsBitField,
-  Partials
+  Partials,
+  ActionRowBuilder,
+  StringSelectMenuBuilder,
+  ComponentType
 } = require("discord.js");
 const axios = require("axios");
 const fs = require("fs");
@@ -461,7 +463,30 @@ const allowed = !!ownedRow;
     return res.json({ success: false, allowed: false, message: "Server error" });
   }
 });
+// ----------------------------------------------------
+// WHITELIST CHECK BY PRODUCT ID (Matches !profile ownership)
+// POST /whitelist/checkByProductId
+// body: { userId, productId }
+// ----------------------------------------------------
+app.post("/whitelist/checkByProductId", async (req, res) => {
+  const { userId, productId } = req.body;
 
+  if (!userId || !productId) {
+    return res.json({ success: false, allowed: false, message: "Missing fields" });
+  }
+
+  try {
+    const ownedRow = await Owned.findOne({
+      userId: String(userId),
+      productId: new mongoose.Types.ObjectId(String(productId))
+    }).select("_id");
+
+    return res.json({ success: true, allowed: !!ownedRow });
+  } catch (err) {
+    console.error("Whitelist checkByProductId error:", err);
+    return res.json({ success: false, allowed: false, message: "Server error" });
+  }
+});
 // ----------------------------------------------------
 // ⭐ PRODUCT API: PURCHASE (from Roblox)
 // body: { userId, devProductId }
@@ -925,32 +950,52 @@ const ownedIds = ownedRows.map(r => String(r.productId));
     });
   }
 ///////// whiteist cmd///
+// ----------------------------------------------------
+// !whitelist (Admin only)
+// Makes a Lua script that only runs if user owns Product ID in Mongo (Owned)
+// ----------------------------------------------------
 if (cmd === "!whitelist") {
-  // only admins can use
   if (!message.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
     return message.reply("No permission.");
   }
 
-  const dm = await message.author.send("Send your .lua file here.").catch(() => null);
+  const dm = await message.author.send(
+    "Send the **Product ID** for this script first. Then upload your `.lua` file."
+  ).catch(() => null);
+
   if (!dm) return message.reply("Enable DMs and try again.");
 
-  const collected = await dm.channel.awaitMessages({
-    filter: m =>
-      m.author.id === message.author.id &&
-      m.attachments.size > 0,
+  // Step 1: Get productId
+  const productIdMsgCol = await dm.channel.awaitMessages({
+    filter: m => m.author.id === message.author.id && !!m.content,
     max: 1,
     time: 120000
   });
 
-  if (!collected.size) {
-    return dm.channel.send("Timed out. Run !whitelist again.");
+  if (!productIdMsgCol.size) {
+    return dm.channel.send("Timed out. Run `!whitelist` again.");
   }
 
-  const msg = collected.first();
+  const productId = productIdMsgCol.first().content.trim();
+
+  // Step 2: Get file
+  await dm.channel.send("Now upload your `.lua` file.");
+
+  const fileCol = await dm.channel.awaitMessages({
+    filter: m => m.author.id === message.author.id && m.attachments.size > 0,
+    max: 1,
+    time: 120000
+  });
+
+  if (!fileCol.size) {
+    return dm.channel.send("Timed out. Run `!whitelist` again.");
+  }
+
+  const msg = fileCol.first();
   const att = msg.attachments.first();
 
   if (!att.name.toLowerCase().endsWith(".lua")) {
-    return dm.channel.send("That is not a .lua file.");
+    return dm.channel.send("That is not a `.lua` file.");
   }
 
   if (att.size > 400_000) {
@@ -958,29 +1003,227 @@ if (cmd === "!whitelist") {
   }
 
   try {
-    const res = await axios.get(att.url, { responseType: "arraybuffer" });
-    const luaText = Buffer.from(res.data).toString("utf8");
+    const dl = await axios.get(att.url, { responseType: "arraybuffer" });
+    const luaText = Buffer.from(dl.data).toString("utf8");
 
-    const out = obfuscateLua(luaText);
+const gate = `
+-- Orion whitelist gate (bot-owned products)
+local HttpService = game:GetService("HttpService")
+local Players = game:GetService("Players")
+
+local API = "https://orionbot-production.up.railway.app"
+local PRODUCT_ID = "${productId}"
+
+local function allowed()
+  local plr = Players.LocalPlayer or Players:GetPlayers()[1]
+  if not plr then return false end
+
+  local body = HttpService:JSONEncode({
+    userId = tostring(plr.UserId),
+    productId = PRODUCT_ID
+  })
+
+  local ok, resp = pcall(function()
+    return HttpService:PostAsync(
+      API .. "/whitelist/checkByProductId",
+      body,
+      Enum.HttpContentType.ApplicationJson
+    )
+  end)
+
+  if not ok then return false end
+
+  local ok2, data = pcall(function()
+    return HttpService:JSONDecode(resp)
+  end)
+
+  if not ok2 then return false end
+
+  return data and data.allowed == true
+end
+
+if not allowed() then
+  warn("Not whitelisted for this product.")
+  return
+end
+`;
+
+    const combined = gate + "\n" + luaText;
+
+    const out = obfuscateLua(combined);
     if (!out) return dm.channel.send("Failed to obfuscate. Bad Lua.");
 
     const outBuf = Buffer.from(out, "utf8");
 
     await dm.channel.send({
-      content: "Here is your obfuscated script.",
+      content: "Here is your whitelisted + obfuscated script.",
       files: [{ attachment: outBuf, name: att.name.replace(/\.lua$/i, ".obf.lua") }]
     });
 
     return;
   } catch (e) {
     console.error("Whitelist command error:", e);
-    return dm.channel.send("Error downloading or obfuscating file.");
+    return dm.channel.send("Error downloading or processing file.");
   }
 }
-
   // ----------------------------------------------------
   // ADMIN COMMANDS
   // ----------------------------------------------------
+async function askForTargetDiscordId(message) {
+  // If mention provided
+  const mentioned = message.mentions.users.first();
+  if (mentioned) return mentioned.id;
+
+  // If ID provided
+  const maybeId = (message.content.trim().split(/\s+/)[1] || "").trim();
+  if (maybeId && /^\d{15,20}$/.test(maybeId)) return maybeId;
+
+  // Ask in-channel
+  const prompt = await message.reply("Send the target user now. Mention them or paste their Discord ID.");
+
+  const collected = await message.channel.awaitMessages({
+    filter: m => m.author.id === message.author.id,
+    max: 1,
+    time: 60000
+  });
+
+  if (!collected.size) {
+    await prompt.edit("Timed out.");
+    return null;
+  }
+
+  const m = collected.first();
+  const mention2 = m.mentions.users.first();
+  if (mention2) return mention2.id;
+
+  const id2 = (m.content || "").trim();
+  if (/^\d{15,20}$/.test(id2)) return id2;
+
+  await message.reply("Invalid user. Use a mention or Discord ID.");
+  return null;
+}
+
+async function pickProductFromDropdown(message, products, title) {
+  const list = products.slice(0, 25); // Discord limit per select menu
+  const options = list.map(p => ({
+    label: (p.name || "Unnamed").slice(0, 100),
+    description: (p.hub ? `Hub: ${p.hub}` : "No hub").slice(0, 100),
+    value: String(p._id)
+  }));
+
+  const menu = new StringSelectMenuBuilder()
+    .setCustomId("product_pick")
+    .setPlaceholder("Choose a product")
+    .addOptions(options);
+
+  const row = new ActionRowBuilder().addComponents(menu);
+
+  const msg = await message.reply({
+    embeds: [new EmbedBuilder().setTitle(title).setDescription("Select a product from the dropdown.").setColor(0x00ffea)],
+    components: [row]
+  });
+
+  const interaction = await msg.awaitMessageComponent({
+    componentType: ComponentType.StringSelect,
+    time: 60000,
+    filter: i => i.user.id === message.author.id
+  }).catch(() => null);
+
+  if (!interaction) {
+    await msg.edit({ content: "Timed out.", embeds: [], components: [] }).catch(() => {});
+    return null;
+  }
+
+  const productId = interaction.values?.[0];
+  await interaction.deferUpdate().catch(() => {});
+  await msg.edit({ components: [] }).catch(() => {});
+
+  return productId || null;
+}
+
+// ----------------------------------------
+// !grant
+// ----------------------------------------
+if (cmd === "!grant") {
+  if (!message.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
+    return message.reply("No permission.");
+  }
+
+  const targetDiscordId = await askForTargetDiscordId(message);
+  if (!targetDiscordId) return;
+
+  const robloxUserId = discordToRoblox[String(targetDiscordId).trim()];
+  if (!robloxUserId) {
+    return message.reply("User isn’t linked.");
+  }
+
+  const products = await Product.find().sort({ createdAt: -1 }).lean();
+  if (!products.length) return message.reply("No products found.");
+
+  if (products.length > 25) {
+    await message.reply("I can only show 25 products at a time. Showing newest 25.");
+  }
+
+  const productId = await pickProductFromDropdown(message, products, "Grant Product");
+  if (!productId) return;
+
+  try {
+    await Owned.updateOne(
+      { userId: String(robloxUserId), productId: new mongoose.Types.ObjectId(String(productId)) },
+      { $setOnInsert: { userId: String(robloxUserId), productId: new mongoose.Types.ObjectId(String(productId)) } },
+      { upsert: true }
+    );
+
+    const prod = await Product.findById(productId).lean();
+    return message.reply(`✅ Granted **${prod?.name || "product"}** to <@${targetDiscordId}> (Roblox: \`${robloxUserId}\`).`);
+  } catch (e) {
+    console.error("!grant error:", e);
+    return message.reply("❌ Failed to grant product.");
+  }
+}
+
+// ----------------------------------------
+// !revoke
+// ----------------------------------------
+if (cmd === "!revoke") {
+  if (!message.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
+    return message.reply("No permission.");
+  }
+
+  const targetDiscordId = await askForTargetDiscordId(message);
+  if (!targetDiscordId) return;
+
+  const robloxUserId = discordToRoblox[String(targetDiscordId).trim()];
+  if (!robloxUserId) {
+    return message.reply("User isn’t linked.");
+  }
+
+  // Only show products they actually own (cleaner)
+  const ownedRows = await Owned.find({ userId: String(robloxUserId) }).select("productId").lean();
+  const ownedIds = ownedRows.map(r => String(r.productId));
+  if (!ownedIds.length) return message.reply("That user owns no products.");
+
+  const products = await Product.find({ _id: { $in: ownedIds } }).lean();
+  if (!products.length) return message.reply("Could not load owned products.");
+
+  const productId = await pickProductFromDropdown(message, products, "Revoke Product");
+  if (!productId) return;
+
+  try {
+    await Owned.deleteOne({
+      userId: String(robloxUserId),
+      productId: new mongoose.Types.ObjectId(String(productId))
+    });
+
+    const prod = await Product.findById(productId).lean();
+    return message.reply(`✅ Revoked **${prod?.name || "product"}** from <@${targetDiscordId}> (Roblox: \`${robloxUserId}\`).`);
+  } catch (e) {
+    console.error("!revoke error:", e);
+    return message.reply("❌ Failed to revoke product.");
+  }
+}
+
+  //// isk 
   if (!message.member.permissions.has(PermissionsBitField.Flags.Administrator)) return;
 
 // ⭐ !addproduct
