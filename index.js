@@ -1582,21 +1582,95 @@ if (cmd === "!undowntime") {
 }
 
   // ⭐ !removeproduct
-  if (cmd === "!removeproduct") {
-    const dm = await message.author.send({
-      embeds: [
-        new EmbedBuilder()
-          .setTitle("🗑 Remove Product")
-          .setDescription("I'll show you the current products. Reply with the **Product ID** to remove.")
-          .setColor(0xffaa00)
-      ]
-    }).catch(() => null);
+if (cmd === "!removeproduct") {
+  const dm = await message.author.send({
+    embeds: [
+      new EmbedBuilder()
+        .setTitle("🗑 Remove Product")
+        .setDescription("I'll show you the current products. Reply with the **Product ID** to remove.")
+        .setColor(0xffaa00)
+    ]
+  }).catch(() => null);
 
-    if (!dm) {
-      return message.reply("I couldn't DM you. Please enable DMs and try again.");
+  if (!dm) {
+    return message.reply("I couldn't DM you. Please enable DMs and try again.");
+  }
+
+  // Fetch current products from API
+  let list = [];
+  try {
+    const res = await axios.get("https://orionbot-production.up.railway.app/products");
+    list = res.data.products || [];
+  } catch (err) {
+    console.error("Fetch products error:", err);
+    return dm.channel.send("❌ Failed to fetch products.");
+  }
+
+  if (list.length === 0) {
+    return dm.channel.send("There are currently no products.");
+  }
+
+  let desc = list.map(p =>
+    `**ID:** ${p.id}\n**Hub:** ${p.hub || "Unknown"}\n**Name:** ${p.name}\n**DevProductId:** ${p.devProductId}`
+  ).join("\n\n");
+
+  await dm.channel.send({
+    embeds: [
+      new EmbedBuilder()
+        .setTitle("Current Products")
+        .setDescription(desc)
+        .setColor(0x00ffea)
+    ]
+  });
+
+  const askIdMsg = await dm.channel.awaitMessages({
+    filter: m => m.author.id === message.author.id,
+    max: 1,
+    time: 60000
+  });
+
+  if (!askIdMsg.size) {
+    return dm.channel.send("⏳ Timed out.");
+  }
+
+  const productId = askIdMsg.first().content.trim();
+
+  try {
+    const res = await axios.post("https://orionbot-production.up.railway.app/removeProduct", {
+      productId
+    });
+
+    if (!res.data.success) {
+      return dm.channel.send("❌ Failed to remove product. Check ID.");
     }
 
-    // ⭐ !editproduct <productId> <field> <newValue>
+    dm.channel.send({
+      embeds: [
+        new EmbedBuilder()
+          .setTitle("✅ Product Removed")
+          .setDescription(`Product with ID **${productId}** has been removed.`)
+          .setColor(0x00ff00)
+      ]
+    });
+
+    sendLog(
+      message.guild,
+      new EmbedBuilder()
+        .setTitle("🗑 Product Removed")
+        .setDescription(`Product ID **${productId}** removed by ${message.author.tag}.`)
+        .setColor(0xffaa00)
+        .setTimestamp()
+    );
+
+  } catch (err) {
+    console.error("RemoveProduct Error:", err);
+    dm.channel.send("❌ Failed to remove product. Check server logs.");
+  }
+
+  return;
+}
+
+// ⭐ !editproduct (correctly placed OUTSIDE removeproduct)
 if (cmd === "!editproduct") {
   if (!message.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
     return message.reply("❌ You do not have permission to use this command.");
@@ -1620,7 +1694,6 @@ if (cmd === "!editproduct") {
     });
   }
 
-  // Allowed fields
   const allowedFields = ["name", "description", "imageId", "devProductId", "hub"];
   if (!allowedFields.includes(field)) {
     return message.reply({
@@ -1646,7 +1719,6 @@ if (cmd === "!editproduct") {
       });
     }
 
-    // Hub normalization
     if (field === "hub") {
       const clean = newValue.trim().toLowerCase();
       if (clean === "orion") product.hub = "Orion";
@@ -1687,80 +1759,6 @@ if (cmd === "!editproduct") {
     return message.reply("❌ An error occurred while editing the product.");
   }
 }
-
-    // Fetch current products from API
-    let list = [];
-    try {
-      const res = await axios.get("https://orionbot-production.up.railway.app/products");
-      list = res.data.products || [];
-    } catch (err) {
-      console.error("Fetch products error:", err);
-      return dm.channel.send("❌ Failed to fetch products.");
-    }
-
-    if (list.length === 0) {
-      return dm.channel.send("There are currently no products.");
-    }
-
-   let desc = list.map(p =>
-  `**ID:** ${p.id}\n**Hub:** ${p.hub || "Unknown"}\n**Name:** ${p.name}\n**DevProductId:** ${p.devProductId}`
-).join("\n\n");
-
-    await dm.channel.send({
-      embeds: [
-        new EmbedBuilder()
-          .setTitle("Current Products")
-          .setDescription(desc)
-          .setColor(0x00ffea)
-      ]
-    });
-
-    const askIdMsg = await dm.channel.awaitMessages({
-      filter: m => m.author.id === message.author.id,
-      max: 1,
-      time: 60000
-    });
-
-    if (!askIdMsg.size) {
-      return dm.channel.send("⏳ Timed out.");
-    }
-
-    const productId = askIdMsg.first().content.trim();
-
-    try {
-      const res = await axios.post("https://orionbot-production.up.railway.app/removeProduct", {
-        productId
-      });
-
-      if (!res.data.success) {
-        return dm.channel.send("❌ Failed to remove product. Check ID.");
-      }
-
-      dm.channel.send({
-        embeds: [
-          new EmbedBuilder()
-            .setTitle("✅ Product Removed")
-            .setDescription(`Product with ID **${productId}** has been removed.`)
-            .setColor(0x00ff00)
-        ]
-      });
-
-      sendLog(
-        message.guild,
-        new EmbedBuilder()
-          .setTitle("🗑 Product Removed")
-          .setDescription(`Product ID **${productId}** removed by ${message.author.tag}.`)
-          .setColor(0xffaa00)
-          .setTimestamp()
-      );
-
-    } catch (err) {
-      console.error("RemoveProduct Error:", err);
-      dm.channel.send("❌ Failed to remove product. Check server logs.");
-    }
-
-    return;
-  }
 
   // ⭐ !ResetVerify <RobloxUserId>
   if (cmd === "!resetverify") {
