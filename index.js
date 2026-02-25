@@ -1,7 +1,7 @@
 const {
   Client,
   GatewayIntentBits,
-  EmbedBuilder,
+ EmbedBuilder,
   PermissionsBitField,
   Partials,
   ActionRowBuilder,
