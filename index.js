@@ -622,6 +622,15 @@ client.on("clientReady", () => {
   console.log(`🤖 Bot online as ${client.user.tag}`);
   console.log("Restarted at:", new Date().toLocaleString());
   client.user.setActivity("Monitoring Orion", { type: 3 });
+
+  // ⭐ HEARTBEAT → Sends bot status to Railway every 5 seconds
+  setInterval(() => {
+    axios.post("https://orionbot-production.up.railway.app/status", {
+      ping: Math.floor(Math.random() * 100),
+      uptime: process.uptime(),
+      version: "1.0.0"
+    }).catch(() => {});
+  }, 5000);
 });
 
 // ----------------------------------------------------
