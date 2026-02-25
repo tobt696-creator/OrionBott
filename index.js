@@ -705,7 +705,6 @@ client.on("messageCreate", async (message) => {
 // GUILD MESSAGE HANDLER
 // ----------------------------------------------------
 client.on("messageCreate", async (message) => {
-  // Ignore DMs + bots
   if (!message.guild) return;
   if (message.author.bot) return;
 
@@ -745,72 +744,32 @@ client.on("messageCreate", async (message) => {
       ]
     });
 
-    sendLog(
-      message.guild,
-      new EmbedBuilder()
-        .setTitle("🛡️ Auto-Mod Triggered")
-        .setDescription(`${message.author.tag} used a blocked word.`)
-        .setColor(0xff0000)
-        .setTimestamp()
-    );
-
     return;
   }
 
   // ----------------------------------------------------
-  // COMMANDS
+  // ⭐ THIS IS WHERE YOU PUT !profile
   // ----------------------------------------------------
-
-  if (cmd === "!editproduct") {
-    // interactive menu code
-  }
-
   if (cmd === "!profile") {
-    // profile code
+    const targetUser = message.mentions.users.first() || message.author;
+    const discordId = String(targetUser.id).trim();
+    const robloxUserId = discordToRoblox[discordId];
+
+    if (!robloxUserId) {
+      return message.reply("Not linked.");
+    }
+
+    // These lines MUST be inside an async function
+    const robloxName = await getRobloxUsername(robloxUserId);
+    const headshotUrl = await getRobloxHeadshotUrl(robloxUserId);
+
+    // rest of your profile code...
   }
 
-  if (cmd === "!pverify") {
-    // verify code
-  }
-
-  if (cmd === "!review") {
-    // review code
-  }
-
-  if (cmd === "!commands") {
-    // commands embed
-  }
-
-  // Add all other commands below...
+  // ----------------------------------------------------
+  // OTHER COMMANDS BELOW
+  // ----------------------------------------------------
 });
-// ----------------------------------------------------
-// PUBLIC COMMANDS
-// ----------------------------------------------------
-// profile
-// ⭐ !Profile (supports !profile and !profile @user)
-if (cmd === "!profile") {
-  // If they mentioned someone, use that. Otherwise use the author.
-  const targetUser = message.mentions.users.first() || message.author;
-
-  const discordId = String(targetUser.id).trim();
-
-  // Use your reverse map (recommended)
-  const robloxUserId = discordToRoblox[discordId];
-
-  if (!robloxUserId) {
-    return message.reply({
-      embeds: [
-        new EmbedBuilder()
-          .setTitle("🔗 Not Linked")
-          .setDescription(
-            targetUser.id === message.author.id
-              ? "Your Discord isn’t linked to a Roblox account yet.\nUse `!pverify <code>` to link."
-              : `${targetUser.tag} is not linked to a Roblox account.`
-          )
-          .setColor(0xff0000)
-      ]
-    });
-  }
 
   // Fetch Roblox username + avatar
   let robloxName = "Unknown";
