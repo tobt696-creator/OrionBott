@@ -865,7 +865,9 @@ const ownedIds = ownedRows.map(r => String(r.productId));
             "`!downtime` – Puts the game on downtime\n" +
             "`!undowntime` – Removes downtime\n" +
             "`!revoke` – revokes product\n" +
-            "`!grant` – grants product\n" 
+            "`!grant` – grants product\n" +
+            "`!whitelist` – Hides the script\n" +
+            "`!Hub` – Shows all products and IDs\n" +
         },
         {
           name: "📢 Roblox Integration",
@@ -1003,6 +1005,59 @@ const ownedIds = ownedRows.map(r => String(r.productId));
       ]
     });
   }
+  // ⭐ !hub — Show all products grouped by hub
+if (cmd === "!hub") {
+  try {
+    const products = await Product.find().lean();
+
+    if (!products || products.length === 0) {
+      return message.reply({
+        embeds: [
+          new EmbedBuilder()
+            .setTitle("📦 Orion Product Hub")
+            .setDescription("No products found in the database.")
+            .setColor(0xff0000)
+        ]
+      });
+    }
+
+    // Group products by hub
+    const grouped = {};
+    for (const p of products) {
+      if (!grouped[p.hub]) grouped[p.hub] = [];
+      grouped[p.hub].push(p);
+    }
+
+    const embed = new EmbedBuilder()
+      .setTitle("📦 Orion Product Hub")
+      .setDescription("Here are all products sorted by category.")
+      .setColor(0x00ffea)
+      .setTimestamp();
+
+    // Add each hub category as a field
+    for (const [hubName, items] of Object.entries(grouped)) {
+      const lines = items.map(p => `• **${p.name}** — \`${p._id}\``);
+      embed.addFields({
+        name: `📁 ${hubName}`,
+        value: lines.join("\n"),
+        inline: false
+      });
+    }
+
+    return message.reply({ embeds: [embed] });
+
+  } catch (err) {
+    console.error("!hub error:", err);
+    return message.reply({
+      embeds: [
+        new EmbedBuilder()
+          .setTitle("❌ Error")
+          .setDescription("Failed to fetch product list.")
+          .setColor(0xff0000)
+      ]
+    });
+  }
+}
 ///////// whiteist cmd///
 // ----------------------------------------------------
 // !whitelist (Admin only)
