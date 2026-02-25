@@ -180,7 +180,7 @@ app.get("/status", (req, res) => {
     ping: client?.ws?.ping ?? null,
     uptime: uptimeSec,
     lastHeartbeat: lastHeartbeat,
-    version: process.env.npm_package_version || "unknown"
+    version: process.env.npm_package_version || "V1.0.0"
   });
 });
 
