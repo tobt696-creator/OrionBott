@@ -177,10 +177,10 @@ app.get("/status", (req, res) => {
 
   res.json({
     online: true,
-    ping: 0,                 // replace with real bot ping if you have it
+    ping: client?.ws?.ping ?? null,
     uptime: uptimeSec,
     lastHeartbeat: lastHeartbeat,
-    version: version
+    version: process.env.npm_package_version || "unknown"
   });
 });
 
