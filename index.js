@@ -711,6 +711,14 @@ client.on("messageCreate", async (message) => {
   const args = message.content.trim().split(/\s+/);
   const cmd = args[0].toLowerCase();
 
+  // ⭐ PLACE !editproduct HERE
+  if (cmd === "!editproduct") {
+     ...interactive menu code...
+  }
+
+  // other commands...
+});
+
   // ----------------------------------------------------
   // COUNTING SYSTEM
   // ----------------------------------------------------
@@ -1670,95 +1678,44 @@ if (cmd === "!removeproduct") {
   return;
 }
 
-// ⭐ !editproduct (correctly placed OUTSIDE removeproduct)
+// ⭐ INTERACTIVE !editproduct
 if (cmd === "!editproduct") {
   if (!message.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
     return message.reply("❌ You do not have permission to use this command.");
   }
 
   const productId = args[1];
-  const field = args[2];
-  const newValue = args.slice(3).join(" ");
-
-  if (!productId || !field || !newValue) {
-    return message.reply({
-      embeds: [
-        new EmbedBuilder()
-          .setTitle("❌ Invalid Usage")
-          .setDescription("Correct format:\n`!editproduct <productId> <field> <newValue>`")
-          .addFields(
-            { name: "Editable Fields", value: "`name`, `description`, `imageId`, `devProductId`, `hub`" }
-          )
-          .setColor(0xff0000)
-      ]
-    });
+  if (!productId) {
+    return message.reply("❌ Usage: `!editproduct <productId>`");
   }
 
-  const allowedFields = ["name", "description", "imageId", "devProductId", "hub"];
-  if (!allowedFields.includes(field)) {
-    return message.reply({
-      embeds: [
-        new EmbedBuilder()
-          .setTitle("❌ Invalid Field")
-          .setDescription(`You can only edit:\n\`${allowedFields.join("`, `")}\``)
-          .setColor(0xff0000)
-      ]
-    });
+  const product = await Product.findById(productId);
+  if (!product) {
+    return message.reply("❌ Invalid product ID.");
   }
 
-  try {
-    const product = await Product.findById(productId);
-    if (!product) {
-      return message.reply({
-        embeds: [
-          new EmbedBuilder()
-            .setTitle("❌ Product Not Found")
-            .setDescription("Invalid productId.")
-            .setColor(0xff0000)
-        ]
-      });
-    }
+  // Buttons
+  const row = new ActionRowBuilder().addComponents(
+    new StringSelectMenuBuilder()
+      .setCustomId("editproduct_menu")
+      .setPlaceholder("Select what you want to edit")
+      .addOptions([
+        { label: "Name", value: "name" },
+        { label: "Description", value: "description" },
+        { label: "ImageId", value: "imageId" },
+        { label: "DevProductId", value: "devProductId" },
+        { label: "Hub", value: "hub" }
+      ])
+  );
 
-    if (field === "hub") {
-      const clean = newValue.trim().toLowerCase();
-      if (clean === "orion") product.hub = "Orion";
-      else if (clean === "nova lighting") product.hub = "Nova Lighting";
-      else if (clean === "sunlight solutions") product.hub = "Sunlight Solutions";
-      else {
-        return message.reply({
-          embeds: [
-            new EmbedBuilder()
-              .setTitle("❌ Invalid Hub")
-              .setDescription("Valid hubs: `Orion`, `Nova Lighting`, `Sunlight Solutions`")
-              .setColor(0xff0000)
-          ]
-        });
-      }
-    } else {
-      product[field] = newValue;
-    }
+  const embed = new EmbedBuilder()
+    .setTitle("🛠 Edit Product")
+    .setDescription(`Editing **${product.name}**\nSelect what you want to change.`)
+    .setColor(0x00ffea);
 
-    await product.save();
-
-    return message.reply({
-      embeds: [
-        new EmbedBuilder()
-          .setTitle("✅ Product Updated")
-          .setColor(0x00ffea)
-          .addFields(
-            { name: "Product ID", value: productId },
-            { name: "Updated Field", value: field },
-            { name: "New Value", value: newValue }
-          )
-          .setTimestamp()
-      ]
-    });
-
-  } catch (err) {
-    console.error("EditProduct Error:", err);
-    return message.reply("❌ An error occurred while editing the product.");
-  }
+  return message.reply({ embeds: [embed], components: [row] });
 }
+
 
   // ⭐ !ResetVerify <RobloxUserId>
   if (cmd === "!resetverify") {
