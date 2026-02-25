@@ -867,11 +867,7 @@ const ownedIds = ownedRows.map(r => String(r.productId));
             "`!revoke` – revokes product\n" +
             "`!grant` – grants product\n" +
             "`!whitelist` – Hides the script\n" +
-<<<<<<< HEAD
-            "`!Hub` – Shows all products and IDs\n" +
-=======
             "`!Hub` – Shows all products and IDs\n" 
->>>>>>> 3bbe0c2 (yeyeey)
         },
         {
           name: "📢 Roblox Integration",
