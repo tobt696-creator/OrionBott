@@ -705,19 +705,12 @@ client.on("messageCreate", async (message) => {
 // GUILD MESSAGE HANDLER
 // ----------------------------------------------------
 client.on("messageCreate", async (message) => {
+  // Ignore DMs + bots
   if (!message.guild) return;
   if (message.author.bot) return;
 
   const args = message.content.trim().split(/\s+/);
   const cmd = args[0].toLowerCase();
-
-  // ⭐ PLACE !editproduct HERE
-  if (cmd === "!editproduct") {
-     ...interactive menu code...
-  }
-
-  // other commands...
-});
 
   // ----------------------------------------------------
   // COUNTING SYSTEM
@@ -733,15 +726,13 @@ client.on("messageCreate", async (message) => {
     lastNumber = num;
     lastNumberData.lastNumber = lastNumber;
     saveJson("counting.json", lastNumberData);
-
     return;
   }
 
   // ----------------------------------------------------
-  // AUTO-MOD (EXAMPLE)
-// ----------------------------------------------------
-  const badWords = ["fuck", "shit","bitch"];
-
+  // AUTO-MOD
+  // ----------------------------------------------------
+  const badWords = ["fuck", "shit", "bitch"];
   if (badWords.some(w => message.content.toLowerCase().includes(w))) {
     try { await message.delete(); } catch {}
 
@@ -762,7 +753,36 @@ client.on("messageCreate", async (message) => {
         .setColor(0xff0000)
         .setTimestamp()
     );
+
+    return;
   }
+
+  // ----------------------------------------------------
+  // COMMANDS
+  // ----------------------------------------------------
+
+  if (cmd === "!editproduct") {
+    // interactive menu code
+  }
+
+  if (cmd === "!profile") {
+    // profile code
+  }
+
+  if (cmd === "!pverify") {
+    // verify code
+  }
+
+  if (cmd === "!review") {
+    // review code
+  }
+
+  if (cmd === "!commands") {
+    // commands embed
+  }
+
+  // Add all other commands below...
+});
 // ----------------------------------------------------
 // PUBLIC COMMANDS
 // ----------------------------------------------------
