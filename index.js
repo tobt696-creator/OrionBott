@@ -165,8 +165,23 @@ let lastNumber = lastNumberData.lastNumber || 0;
 // ----------------------------------------------------
 // BASIC STATUS ENDPOINT
 // ----------------------------------------------------
+const startedAt = Date.now();
+const version = process.env.npm_package_version || "unknown";
+let lastHeartbeat = Date.now();
+
+// update this wherever your bot pings/loops
+setInterval(() => { lastHeartbeat = Date.now(); }, 15000);
+
 app.get("/status", (req, res) => {
-  res.json({ online: true });
+  const uptimeSec = (Date.now() - startedAt) / 1000;
+
+  res.json({
+    online: true,
+    ping: 0,                 // replace with real bot ping if you have it
+    uptime: uptimeSec,
+    lastHeartbeat: lastHeartbeat,
+    version: version
+  });
 });
 
 async function getRobloxUsername(userId) {
