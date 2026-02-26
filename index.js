@@ -86,11 +86,15 @@ function saveJson(fileName, data) {
 
 
 mongoose.connect(process.env.MONGO_URI)
-.then(() => {
-  console.log("✅ MongoDB Connected");
-}).catch(err => {
-  console.error("❌ MongoDB Connection Error:", err);
-});
+  .then(async () => {
+    console.log("✅ MongoDB Connected");
+
+    // ✅ move linked.json → Mongo
+    await migrateLinkedJsonToMongo();
+  })
+  .catch(err => {
+    console.error("❌ MongoDB Connection Error:", err);
+  });
 
 // ----------------------------------------------------
 // DOWNTIME STATE (MongoDB)
@@ -1481,33 +1485,7 @@ async function pickProductFromDropdown(message, products, title) {
 
   return productId || null;
 }
-async function pushManualLinksToMongo() {
-  const data = {
-    "767086310": "1092226514331901974",
-    "2010692028": "1144811100123181067",
-    "2500387883": "1327985133571276803",
-    "7166591497": "1465975271105757267",
-    "2690789706": "1180530069941268673",
-    "2687108158": "1190692291535446156",
-    "1709414759": "1465975271105757267"
-  };
 
-  const bulk = Object.entries(data).map(([robloxUserId, discordId]) => ({
-    updateOne: {
-      filter: { robloxUserId: String(robloxUserId) },
-      update: { $set: { discordId: String(discordId) } },
-      upsert: true
-    }
-  }));
-
-  const result = await Link.bulkWrite(bulk, { ordered: false });
-
-  console.log("Migration complete:", {
-    upserted: result.upsertedCount,
-    modified: result.modifiedCount,
-    matched: result.matchedCount
-  });
-}
 // ----------------------------------------
 // !grant
 // ----------------------------------------
@@ -1519,10 +1497,10 @@ if (cmd === "!grant") {
   const targetDiscordId = await askForTargetDiscordId(message);
   if (!targetDiscordId) return;
 
-  const robloxUserId = discordToRoblox[String(targetDiscordId).trim()];
-  if (!robloxUserId) {
-    return message.reply("User isn’t linked.");
-  }
+const linkRow = await Link.findOne({ discordId: String(targetDiscordId).trim() }).lean();
+const robloxUserId = linkRow?.robloxUserId;
+
+if (!robloxUserId) return message.reply("User isn’t linked.");
 
   const products = await Product.find().sort({ createdAt: -1 }).lean();
   if (!products.length) return message.reply("No products found.");
@@ -1616,10 +1594,10 @@ if (cmd === "!revoke") {
   const targetDiscordId = await askForTargetDiscordId(message);
   if (!targetDiscordId) return;
 
-  const robloxUserId = discordToRoblox[String(targetDiscordId).trim()];
-  if (!robloxUserId) {
-    return message.reply("User isn’t linked.");
-  }
+const linkRow = await Link.findOne({ discordId: String(targetDiscordId).trim() }).lean();
+const robloxUserId = linkRow?.robloxUserId;
+
+if (!robloxUserId) return message.reply("User isn’t linked.");
 
   // Only show products they actually own (cleaner)
   const ownedRows = await Owned.find({ userId: String(robloxUserId) }).select("productId").lean();
