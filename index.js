@@ -685,24 +685,46 @@ client.on("interactionCreate", async (interaction) => {
   const productId = interaction.customId.split(":")[1];
   const field = interaction.values?.[0];
 
-  const allowedFields = new Set(["name", "description", "imageId", "devProductId", "hub"]);
+  const allowedFields = new Set(["name", "description", "imageId", "devProductId", "hub", "file"]);
   if (!allowedFields.has(field)) {
     return interaction.reply({ content: "Invalid selection.", flags: MessageFlags.Ephemeral });
   }
 
+  // Admin only
   const member = interaction.member;
   if (!member?.permissions?.has(PermissionsBitField.Flags.Administrator)) {
     return interaction.reply({ content: "No permission.", flags: MessageFlags.Ephemeral });
   }
 
-  await interaction.reply({
-    content:
-      `Editing **${field}** for product \`${productId}\`.\n` +
-      `Send the new value in this channel within 60 seconds.\n` +
-      `Type \`cancel\` to stop.`,
-    flags: MessageFlags.Ephemeral
-  });
+  // Helper: hub normalize
+  function normalizeHub(h) {
+    const clean = String(h || "").trim().toLowerCase();
+    if (clean === "orion") return "Orion";
+    if (clean === "nova lighting") return "Nova Lighting";
+    if (clean === "sunlight solutions") return "Sunlight Solutions";
+    return null;
+  }
 
+  // Prompt
+  if (field === "file") {
+    await interaction.reply({
+      content:
+        `Editing **file** for product \`${productId}\`.\n` +
+        `Upload the new file in this channel within 60 seconds.\n` +
+        `Type \`cancel\` to stop.`,
+      flags: MessageFlags.Ephemeral
+    });
+  } else {
+    await interaction.reply({
+      content:
+        `Editing **${field}** for product \`${productId}\`.\n` +
+        `Send the new value in this channel within 60 seconds.\n` +
+        `Type \`cancel\` to stop.`,
+      flags: MessageFlags.Ephemeral
+    });
+  }
+
+  // Collect next message from the user
   const filter = (m) => m.author.id === interaction.user.id;
   const collected = await interaction.channel.awaitMessages({
     filter,
@@ -715,46 +737,70 @@ client.on("interactionCreate", async (interaction) => {
   }
 
   const replyMsg = collected.first();
-  const newValueRaw = (replyMsg.content || "").trim();
+  const content = (replyMsg.content || "").trim();
 
-  if (!newValueRaw) return interaction.followUp({ content: "Empty value. Cancelled.", flags: MessageFlags.Ephemeral });
-  if (newValueRaw.toLowerCase() === "cancel") return interaction.followUp({ content: "Cancelled.", flags: MessageFlags.Ephemeral });
-
-  function normalizeHub(h) {
-    const clean = String(h || "").trim().toLowerCase();
-    if (clean === "orion") return "Orion";
-    if (clean === "nova lighting") return "Nova Lighting";
-    if (clean === "sunlight solutions") return "Sunlight Solutions";
-    return null;
-  }
-
-  let newValue = newValueRaw;
-
-  if (field === "hub") {
-    const fixed = normalizeHub(newValueRaw);
-    if (!fixed) {
-      return interaction.followUp({
-        content: "Invalid hub. Use: Orion, Nova Lighting, Sunlight Solutions.",
-        flags: MessageFlags.Ephemeral
-      });
-    }
-    newValue = fixed;
+  if (content.toLowerCase() === "cancel") {
+    return interaction.followUp({ content: "Cancelled.", flags: MessageFlags.Ephemeral });
   }
 
   try {
-    if (field === "devProductId") {
-      const existing = await Product.findOne({ devProductId: String(newValue) }).lean();
-      if (existing && String(existing._id) !== String(productId)) {
+    let update = null;
+
+    // FILE FLOW
+    if (field === "file") {
+      const att = replyMsg.attachments?.first();
+      if (!att) {
         return interaction.followUp({
-          content: "That DevProductId is already used by another product.",
+          content: "No attachment found. Upload a file next time.",
           flags: MessageFlags.Ephemeral
         });
+      }
+
+      const fileBuffer = await axios
+        .get(att.url, { responseType: "arraybuffer" })
+        .then((r) => r.data);
+
+      update = {
+        fileName: att.name,
+        fileDataBase64: Buffer.from(fileBuffer).toString("base64")
+      };
+    }
+
+    // TEXT FIELDS FLOW
+    if (field !== "file") {
+      if (!content) {
+        return interaction.followUp({ content: "Empty value. Cancelled.", flags: MessageFlags.Ephemeral });
+      }
+
+      // Hub validate
+      if (field === "hub") {
+        const fixed = normalizeHub(content);
+        if (!fixed) {
+          return interaction.followUp({
+            content: "Invalid hub. Use: Orion, Nova Lighting, Sunlight Solutions.",
+            flags: MessageFlags.Ephemeral
+          });
+        }
+        update = { hub: fixed };
+      } else {
+        update = { [field]: content };
+      }
+
+      // devProductId must be unique
+      if (field === "devProductId") {
+        const existing = await Product.findOne({ devProductId: String(content) }).lean();
+        if (existing && String(existing._id) !== String(productId)) {
+          return interaction.followUp({
+            content: "That DevProductId is already used by another product.",
+            flags: MessageFlags.Ephemeral
+          });
+        }
       }
     }
 
     const updated = await Product.findByIdAndUpdate(
       productId,
-      { $set: { [field]: newValue } },
+      { $set: update },
       { returnDocument: "after" }
     ).lean();
 
@@ -762,6 +808,7 @@ client.on("interactionCreate", async (interaction) => {
       return interaction.followUp({ content: "Product not found.", flags: MessageFlags.Ephemeral });
     }
 
+    // Refresh embed on the original message
     const newEmbed = new EmbedBuilder()
       .setTitle("🛠 Edit Product")
       .setDescription(
@@ -770,7 +817,8 @@ client.on("interactionCreate", async (interaction) => {
         `• Description: ${updated.description || "None"}\n` +
         `• Hub: **${updated.hub || "None"}**\n` +
         `• ImageId: \`${updated.imageId || "None"}\`\n` +
-        `• DevProductId: \`${updated.devProductId || "None"}\`\n\n` +
+        `• DevProductId: \`${updated.devProductId || "None"}\`\n` +
+        `• File: \`${updated.fileName || "None"}\`\n\n` +
         `Select what you want to change from the dropdown.`
       )
       .setColor(0x00ffea)
@@ -779,10 +827,16 @@ client.on("interactionCreate", async (interaction) => {
 
     await interaction.message.edit({ embeds: [newEmbed] }).catch(() => {});
 
-    return interaction.followUp({ content: `✅ Updated **${field}**.`, flags: MessageFlags.Ephemeral });
+    return interaction.followUp({
+      content: `✅ Updated **${field}**.`,
+      flags: MessageFlags.Ephemeral
+    });
   } catch (err) {
     console.error("editproduct interaction error:", err);
-    return interaction.followUp({ content: "❌ Failed to update. Check logs.", flags: MessageFlags.Ephemeral });
+    return interaction.followUp({
+      content: "❌ Failed to update. Check logs.",
+      flags: MessageFlags.Ephemeral
+    });
   }
 });
 // ----------------------------------------------------
@@ -1762,19 +1816,37 @@ if (cmd === "!removeproduct") {
 
 // ⭐ INTERACTIVE !editproduct
 if (cmd === "!editproduct") {
+
+  // Admin check
   if (!message.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
     return message.reply("❌ You do not have permission to use this command.");
   }
 
   const productId = (args[1] || "").trim();
-  if (!productId) return message.reply("❌ Usage: `!editproduct <productId>`");
 
-  const product = await Product.findById(productId).lean().catch(() => null);
-  if (!product) return message.reply("❌ Invalid product ID.");
+  // Validate productId format
+  if (!productId || !/^[a-f\d]{24}$/i.test(productId)) {
+    return message.reply("❌ Usage: `!editproduct <validProductId>`");
+  }
 
+  // Fetch product safely
+  let product;
+  try {
+    product = await Product.findById(productId).lean();
+  } catch {
+    product = null;
+  }
+
+  if (!product) {
+    return message.reply("❌ Product not found.");
+  }
+
+  // Build dropdown
   const menu = new StringSelectMenuBuilder()
-    .setCustomId(`editproduct:${productId}`) // store productId in the customId
+    .setCustomId(`editproduct:${productId}`)
     .setPlaceholder("Select what you want to edit")
+    .setMinValues(1)
+    .setMaxValues(1)
     .addOptions([
       { label: "Name", value: "name" },
       { label: "Description", value: "description" },
@@ -1786,22 +1858,27 @@ if (cmd === "!editproduct") {
 
   const row = new ActionRowBuilder().addComponents(menu);
 
+  // Build embed
   const embed = new EmbedBuilder()
     .setTitle("🛠 Edit Product")
-.setDescription(
-  `**Current Product**\n` +
-  `• Name: **${product.name || "Unnamed"}**\n` +
-  `• Description: ${product.description || "None"}\n` +
-  `• Hub: **${product.hub || "None"}**\n` +
-  `• ImageId: \`${product.imageId || "None"}\`\n` +
-  `• DevProductId: \`${product.devProductId || "None"}\`\n` +
-  `• File: \`${product.fileName || "None"}\`\n\n` +
-  `Select what you want to change from the dropdown.`
-)
     .setColor(0x00ffea)
-    .setFooter({ text: `ProductID: ${productId}` });
+    .setDescription(
+      `**Current Product**\n` +
+      `• Name: **${product.name || "Unnamed"}**\n` +
+      `• Description: ${product.description || "None"}\n` +
+      `• Hub: **${product.hub || "None"}**\n` +
+      `• Image ID: \`${product.imageId || "None"}\`\n` +
+      `• Dev Product ID: \`${product.devProductId || "None"}\`\n` +
+      `• File: \`${product.fileName || "None"}\`\n\n` +
+      `Select what you want to change from the dropdown below.`
+    )
+    .setFooter({ text: `ProductID: ${productId}` })
+    .setTimestamp();
 
-  return message.reply({ embeds: [embed], components: [row] });
+  return message.reply({
+    embeds: [embed],
+    components: [row]
+  });
 }
   // ⭐ !ResetVerify <RobloxUserId>
   if (cmd === "!resetverify") {
