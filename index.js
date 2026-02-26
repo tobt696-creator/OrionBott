@@ -759,9 +759,12 @@ client.on("messageCreate", async (message) => {
       return message.reply("Not linked.");
     }
 
-    // These lines MUST be inside an async function
-    const robloxName = await getRobloxUsername(robloxUserId);
-    const headshotUrl = await getRobloxHeadshotUrl(robloxUserId);
+async function start() {
+  const robloxName = await getRobloxUsername(robloxUserId);
+  console.log(robloxName);
+}
+
+start();
 
     // rest of your profile code...
   }
@@ -819,7 +822,7 @@ const ownedIds = ownedRows.map(r => String(r.productId));
   if (headshotUrl) embed.setThumbnail(headshotUrl);
 
   return message.reply({ embeds: [embed] });
-}
+
 
 
 
@@ -2039,7 +2042,7 @@ if (cmd === "!editproduct") {
 
     return;
   }
-});
+
 
 // ----------------------------------------------------
 // LOGIN BOT
