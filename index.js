@@ -13,6 +13,7 @@ const axios = require("axios");
 const fs = require("fs");
 const path = require("path");
 const express = require("express");
+const { MessageFlags } = require("discord.js");
 require("dotenv").config();
 const luamin = require("luamin");
 const app = express();
@@ -1780,22 +1781,24 @@ if (cmd === "!editproduct") {
       { label: "Description", value: "description" },
       { label: "Image ID", value: "imageId" },
       { label: "Dev Product ID", value: "devProductId" },
-      { label: "Hub", value: "hub" }
+      { label: "Hub", value: "hub" },
+      { label: "File", value: "file" }
     ]);
 
   const row = new ActionRowBuilder().addComponents(menu);
 
   const embed = new EmbedBuilder()
     .setTitle("🛠 Edit Product")
-    .setDescription(
-      `**Current Product**\n` +
-      `• Name: **${product.name || "Unnamed"}**\n` +
-      `• Description: ${product.description || "None"}\n` +
-      `• Hub: **${product.hub || "None"}**\n` +
-      `• ImageId: \`${product.imageId || "None"}\`\n` +
-      `• DevProductId: \`${product.devProductId || "None"}\`\n\n` +
-      `Select what you want to change from the dropdown.`
-    )
+.setDescription(
+  `**Current Product**\n` +
+  `• Name: **${product.name || "Unnamed"}**\n` +
+  `• Description: ${product.description || "None"}\n` +
+  `• Hub: **${product.hub || "None"}**\n` +
+  `• ImageId: \`${product.imageId || "None"}\`\n` +
+  `• DevProductId: \`${product.devProductId || "None"}\`\n` +
+  `• File: \`${product.fileName || "None"}\`\n\n` +
+  `Select what you want to change from the dropdown.`
+)
     .setColor(0x00ffea)
     .setFooter({ text: `ProductID: ${productId}` });
 
