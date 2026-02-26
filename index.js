@@ -933,11 +933,23 @@ client.on("messageCreate", async (message) => {
     return;
   }
 
-  // ----------------------------------------------------
-  // ⭐ THIS IS WHERE YOU PUT !profile
-  // ----------------------------------------------------
- if (cmd === "!profile") {
-  const targetUser = message.mentions.users.first() || message.author;
+// ----------------------------------------------------
+// !profile [@user | userId]
+// ----------------------------------------------------
+if (cmd === "!profile") {
+  const raw = (args[1] || "").trim();
+
+  // 1) Resolve target user
+  let targetUser = message.mentions.users.first() || null;
+
+  // If no mention, try ID
+  if (!targetUser && raw && /^\d{15,20}$/.test(raw)) {
+    targetUser = await client.users.fetch(raw).catch(() => null);
+  }
+
+  // If nothing provided, default to author
+  if (!targetUser) targetUser = message.author;
+
   const discordId = String(targetUser.id).trim();
   const robloxUserId = discordToRoblox[discordId];
 
@@ -1002,8 +1014,6 @@ client.on("messageCreate", async (message) => {
 
   return message.reply({ embeds: [embed] });
 }
-
-
   // ⭐ !Commands
   if (cmd === "!commands") {
     const embed = new EmbedBuilder()
