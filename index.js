@@ -798,15 +798,39 @@ client.on("interactionCreate", async (interaction) => {
       }
     }
 
-    const updated = await Product.findByIdAndUpdate(
-      productId,
-      { $set: update },
-      { returnDocument: "after" }
-    ).lean();
+const updated = await Product.findByIdAndUpdate(
+  productId,
+  { $set: update },
+  { returnDocument: "after" }
+).lean();
 
-    if (!updated) {
-      return interaction.followUp({ content: "Product not found.", flags: MessageFlags.Ephemeral });
-    }
+if (!updated) {
+  return interaction.followUp({ content: "Product not found.", flags: MessageFlags.Ephemeral });
+}
+
+// ⭐ ONLY notify if the FILE was updated
+if (field === "file") {
+
+  const owners = await Owned.find({ productId: productId }).lean();
+
+  for (const row of owners) {
+    const discordId = linkedAccounts[row.userId];
+    if (!discordId) continue;
+
+    const user = await client.users.fetch(discordId).catch(() => null);
+    if (!user) continue;
+
+    try {
+      await user.send({
+        content: "📦 A product you own has been updated. Here is the new file.",
+        files: [{
+          attachment: Buffer.from(updated.fileDataBase64, "base64"),
+          name: updated.fileName
+        }]
+      });
+    } catch {}
+  }
+}
 
     // Refresh embed on the original message
     const newEmbed = new EmbedBuilder()
