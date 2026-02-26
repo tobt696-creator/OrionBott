@@ -16,7 +16,5 @@
     "express": "^4.18.0",
     "luamin": "^1.0.4",
     "mongoose": "^9.2.1"
-    "compilerOptions": {
-    "types": ["node"]
   }
 }
