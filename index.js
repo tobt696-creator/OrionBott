@@ -35,7 +35,21 @@ function obfuscateLua(luaText) {
   }
 }
 
+const verifyCodeSchema = new mongoose.Schema({
+  code: { type: String, unique: true, required: true },
+  robloxUserId: { type: String, required: true },
+  createdAt: { type: Date, default: Date.now, expires: 600 } // 10 min
+});
+const VerifyCode = mongoose.model("VerifyCode", verifyCodeSchema);
 
+const linkSchema = new mongoose.Schema(
+  {
+    robloxUserId: { type: String, unique: true, index: true, required: true },
+    discordId: { type: String, index: true, required: true }
+  },
+  { timestamps: true }
+);
+const Link = mongoose.model("Link", linkSchema);
 // ----------------------------------------------------
 // DATA PERSISTENCE (Railway Volume)
 // ----------------------------------------------------
@@ -217,36 +231,44 @@ app.post("/migrate/hub", async (req, res) => {
 // ROBLOX → BOT: CREATE CODE
 // body: { userId: number, code: "123456" }
 // ----------------------------------------------------
-app.post("/createCode", (req, res) => {
+app.post("/createCode", async (req, res) => {
   const { userId, code } = req.body;
 
   if (!userId || !code) {
     return res.json({ success: false, message: "Missing userId or code" });
   }
 
-  codeToUserId[code] = String(userId);
-  saveJson("codes.json", codeToUserId);
+  try {
+    await VerifyCode.findOneAndUpdate(
+      { code: String(code) },
+      { $set: { robloxUserId: String(userId) }, $setOnInsert: { createdAt: new Date() } },
+      { upsert: true }
+    );
 
-  console.log(`Saved code ${code} for userId ${userId}`);
-
-  return res.json({ success: true });
+    console.log(`Saved code ${code} for userId ${userId} in Mongo`);
+    return res.json({ success: true });
+  } catch (err) {
+    console.error("createCode Mongo error:", err);
+    return res.status(500).json({ success: false, message: "DB error" });
+  }
 });
 
 // ----------------------------------------------------
 // ROBLOX → BOT: CHECK LINKED DISCORD ACCOUNT
 // GET /link/:userId
 // ----------------------------------------------------
-app.get("/link/:userId", (req, res) => {
-  const userId = req.params.userId;
-  const discordId = linkedAccounts[userId];
+app.get("/link/:userId", async (req, res) => {
+  try {
+    const userId = String(req.params.userId).trim();
+    const row = await Link.findOne({ robloxUserId: userId }).lean();
 
-  if (!discordId) {
-    return res.json({ linked: false });
+    if (!row?.discordId) return res.json({ linked: false });
+    return res.json({ linked: true, discordId: row.discordId });
+  } catch (e) {
+    console.error("GET /link error:", e);
+    return res.status(500).json({ linked: false });
   }
-
-  return res.json({ linked: true, discordId });
 });
-
 // ----------------------------------------------------
 // ⭐ ROBLOX ANNOUNCEMENT ENDPOINT
 // ----------------------------------------------------
@@ -509,7 +531,6 @@ app.post("/whitelist/checkByProductId", async (req, res) => {
     return res.status(500).json({ success: false, allowed: false, message: "Server error" });
   }
 });
-
 // GET (browser test)
 // /whitelist/checkByProductId?userId=123&productId=65f...
 app.get("/whitelist/checkByProductId", async (req, res) => {
@@ -530,6 +551,7 @@ app.get("/whitelist/checkByProductId", async (req, res) => {
     console.error("GET /whitelist/checkByProductId error:", err);
     return res.status(500).json({ success: false, allowed: false, message: "Server error" });
   }
+
 });
 // ----------------------------------------------------
 // ⭐ PRODUCT API: PURCHASE (from Roblox)
@@ -551,7 +573,8 @@ app.post("/purchase", async (req, res) => {
     }
 
     // 2) Get linked Discord ID
-    const discordId = linkedAccounts[userId];
+    const row = await Link.findOne({ robloxUserId: String(userId) }).lean();
+const discordId = row?.discordId;
     if (!discordId) {
       return res.json({ success: false, message: "User not linked" });
     }
@@ -616,7 +639,32 @@ app.listen(PORT, () => {
   console.log(`🌐 Server running on port ${PORT}`);
 });
 
+async function migrateLinkedJsonToMongo() {
+  try {
+    const entries = Object.entries(linkedAccounts || {});
+    if (!entries.length) {
+      console.log("No linked accounts to migrate.");
+      return;
+    }
 
+    const bulk = entries.map(([robloxUserId, discordId]) => ({
+      updateOne: {
+        filter: { robloxUserId: String(robloxUserId).trim() },
+        update: { $set: { discordId: String(discordId).trim() } },
+        upsert: true
+      }
+    }));
+
+    const res = await Link.bulkWrite(bulk, { ordered: false });
+    console.log("✅ Migrated linked.json → Mongo", {
+      upserted: res.upsertedCount,
+      modified: res.modifiedCount,
+      matched: res.matchedCount
+    });
+  } catch (err) {
+    console.error("❌ Link migration error:", err);
+  }
+}
 
 // CHANNEL IDS
 const MODMAIL_CHANNEL = "1466828764184051944";
@@ -951,7 +999,8 @@ if (cmd === "!profile") {
   if (!targetUser) targetUser = message.author;
 
   const discordId = String(targetUser.id).trim();
-  const robloxUserId = discordToRoblox[discordId];
+const link = await Link.findOne({ discordId }).lean();
+const robloxUserId = link?.robloxUserId;
 
   if (!robloxUserId) {
     return message.reply("Not linked.");
@@ -1061,23 +1110,25 @@ if (cmd === "!profile") {
   }
 
   // ⭐ !PVerify <6-digit-code>
-  if (cmd === "!pverify") {
-    const code = args[1];
+if (cmd === "!pverify") {
+  const code = (args[1] || "").trim();
 
-    if (!code) {
-      return message.reply({
-        embeds: [
-          new EmbedBuilder()
-            .setTitle("❌ Missing Code")
-            .setDescription("Please provide your 6-digit verification code.")
-            .setColor(0xff0000)
-        ]
-      });
-    }
+  if (!/^\d{6}$/.test(code)) {
+    return message.reply({
+      embeds: [
+        new EmbedBuilder()
+          .setTitle("❌ Invalid Code")
+          .setDescription("Use: `!pverify 123456` (6 digits).")
+          .setColor(0xff0000)
+      ]
+    });
+  }
 
-    const userId = codeToUserId[code];
+  try {
+    // 1) Find code
+    const row = await VerifyCode.findOne({ code }).lean();
 
-    if (!userId) {
+    if (!row) {
       return message.reply({
         embeds: [
           new EmbedBuilder()
@@ -1088,40 +1139,42 @@ if (cmd === "!profile") {
       });
     }
 
-    const discordId = message.author.id;
-    linkedAccounts[userId] = discordId;
-    discordToRoblox[String(discordId).trim()] = String(userId).trim();
-    delete codeToUserId[code];
+    const robloxUserId = String(row.robloxUserId).trim();
+    const discordId = String(message.author.id).trim();
 
-    saveJson("linked.json", linkedAccounts);
-    saveJson("codes.json", codeToUserId);
+    // 2) Save link
+    await Link.findOneAndUpdate(
+      { robloxUserId },
+      { $set: { discordId } },
+      { upsert: true }
+    );
 
-    message.reply({
+    // 3) Consume code (delete it)
+    await VerifyCode.deleteOne({ code });
+
+    return message.reply({
       embeds: [
         new EmbedBuilder()
           .setTitle("✅ Verified & Linked")
           .setDescription(
-            `Linked Roblox user **${userId}** to Discord user <@${discordId}>.\n` +
+            `Linked Roblox user **${robloxUserId}** to Discord user <@${discordId}>.\n` +
             `Roblox can now see your Discord account.`
           )
           .setColor(0x00ff00)
       ]
     });
-
-    sendLog(
-      message.guild,
-      new EmbedBuilder()
-        .setTitle("✅ Verification Linked")
-        .setDescription(
-          `Roblox user **${userId}** linked to Discord user **${message.author.tag}** (${discordId}).`
-        )
-        .setColor(0x00ff00)
-        .setTimestamp()
-    );
-
-    return;
+  } catch (err) {
+    console.error("!pverify error:", err);
+    return message.reply({
+      embeds: [
+        new EmbedBuilder()
+          .setTitle("❌ Error")
+          .setDescription("Verification failed. Try again in a moment.")
+          .setColor(0xff0000)
+      ]
+    });
   }
-
+}
 
   // ⭐ !Review <text>
   if (cmd === "!review") {
