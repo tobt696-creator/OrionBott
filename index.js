@@ -50,6 +50,33 @@ const linkSchema = new mongoose.Schema(
   { timestamps: true }
 );
 const Link = mongoose.model("Link", linkSchema);
+async function seedAllLinks() {
+  const links = {
+    "767086310": "1092226514331901974",
+    "2010692028": "1144811100123181067",
+    "2500387883": "1327985133571276803",
+    "7166591497": "1465975271105757267",
+    "2690789706": "1180530069941268673",
+    "2687108158": "1190692291535446156",
+    "1709414759": "1465975271105757267"
+  };
+
+  const operations = Object.entries(links).map(([robloxUserId, discordId]) => ({
+    updateOne: {
+      filter: { robloxUserId: String(robloxUserId) },
+      update: { $set: { discordId: String(discordId) } },
+      upsert: true
+    }
+  }));
+
+  const result = await Link.bulkWrite(operations, { ordered: false });
+
+  console.log("Seed complete:", {
+    upserted: result.upsertedCount,
+    modified: result.modifiedCount,
+    matched: result.matchedCount
+  });
+}
 // ----------------------------------------------------
 // DATA PERSISTENCE (Railway Volume)
 // ----------------------------------------------------
@@ -1176,33 +1203,7 @@ if (cmd === "!pverify") {
     });
   }
 }
-async function seedAllLinks() {
-  const links = {
-    "767086310": "1092226514331901974",
-    "2010692028": "1144811100123181067",
-    "2500387883": "1327985133571276803",
-    "7166591497": "1465975271105757267",
-    "2690789706": "1180530069941268673",
-    "2687108158": "1190692291535446156",
-    "1709414759": "1465975271105757267"
-  };
 
-  const operations = Object.entries(links).map(([robloxUserId, discordId]) => ({
-    updateOne: {
-      filter: { robloxUserId: String(robloxUserId) },
-      update: { $set: { discordId: String(discordId) } },
-      upsert: true
-    }
-  }));
-
-  const result = await Link.bulkWrite(operations, { ordered: false });
-
-  console.log("Seed complete:", {
-    upserted: result.upsertedCount,
-    modified: result.modifiedCount,
-    matched: result.matchedCount
-  });
-}
   // ⭐ !Review <text>
   if (cmd === "!review") {
     const reviewText = args.slice(1).join(" ");
