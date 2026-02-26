@@ -750,29 +750,14 @@ client.on("messageCreate", async (message) => {
   // ----------------------------------------------------
   // ⭐ THIS IS WHERE YOU PUT !profile
   // ----------------------------------------------------
-  if (cmd === "!profile") {
-    const targetUser = message.mentions.users.first() || message.author;
-    const discordId = String(targetUser.id).trim();
-    const robloxUserId = discordToRoblox[discordId];
+ if (cmd === "!profile") {
+  const targetUser = message.mentions.users.first() || message.author;
+  const discordId = String(targetUser.id).trim();
+  const robloxUserId = discordToRoblox[discordId];
 
-    if (!robloxUserId) {
-      return message.reply("Not linked.");
-    }
-
-async function start() {
-  const robloxName = await getRobloxUsername(robloxUserId);
-  console.log(robloxName);
-}
-
-start();
-
-    // rest of your profile code...
+  if (!robloxUserId) {
+    return message.reply("Not linked.");
   }
-
-  // ----------------------------------------------------
-  // OTHER COMMANDS BELOW
-  // ----------------------------------------------------
-});
 
   // Fetch Roblox username + avatar
   let robloxName = "Unknown";
@@ -785,21 +770,29 @@ start();
     console.error("Profile Roblox fetch error:", e);
   }
 
-  // Owned products (keyed by Roblox userId)
- const ownedRows = await Owned.find({ userId: String(robloxUserId) }).select("productId");
-const ownedIds = ownedRows.map(r => String(r.productId));
+  // Owned products
+  let ownedIds = [];
+  try {
+    const ownedRows = await Owned.find({ userId: String(robloxUserId) })
+      .select("productId")
+      .lean();
 
+    ownedIds = ownedRows.map(r => String(r.productId));
+  } catch (e) {
+    console.error("Profile owned fetch error:", e);
+  }
 
+  // Build product list
   let productLines = [];
   try {
     if (ownedIds.length > 0) {
-      const products = await Product.find({ _id: { $in: ownedIds } });
-
+      const products = await Product.find({ _id: { $in: ownedIds } }).lean();
       const byId = new Map(products.map(p => [String(p._id), p]));
+
       productLines = ownedIds
         .map(id => byId.get(String(id)))
         .filter(Boolean)
-        .map(p => `• **${p.name}**`);
+        .map(p => `• **${p.name || "Unnamed"}**`);
     }
   } catch (e) {
     console.error("Profile product fetch error:", e);
@@ -822,8 +815,7 @@ const ownedIds = ownedRows.map(r => String(r.productId));
   if (headshotUrl) embed.setThumbnail(headshotUrl);
 
   return message.reply({ embeds: [embed] });
-
-
+}
 
 
   // ⭐ !Commands
@@ -2042,7 +2034,7 @@ if (cmd === "!editproduct") {
 
     return;
   }
-
+});
 
 // ----------------------------------------------------
 // LOGIN BOT
