@@ -1,12 +1,13 @@
 const {
   Client,
   GatewayIntentBits,
- EmbedBuilder,
+  EmbedBuilder,
   PermissionsBitField,
   Partials,
   ActionRowBuilder,
   StringSelectMenuBuilder,
-  ComponentType
+  ComponentType,
+  MessageFlags
 } = require("discord.js");
 const axios = require("axios");
 const fs = require("fs");
@@ -686,13 +687,12 @@ client.on("interactionCreate", async (interaction) => {
 
   const allowedFields = new Set(["name", "description", "imageId", "devProductId", "hub"]);
   if (!allowedFields.has(field)) {
-    return interaction.reply({ content: "Invalid selection.", ephemeral: true });
+    return interaction.reply({ content: "Invalid selection.", flags: MessageFlags.Ephemeral });
   }
 
-  // Admin only
   const member = interaction.member;
   if (!member?.permissions?.has(PermissionsBitField.Flags.Administrator)) {
-    return interaction.reply({ content: "No permission.", ephemeral: true });
+    return interaction.reply({ content: "No permission.", flags: MessageFlags.Ephemeral });
   }
 
   await interaction.reply({
@@ -700,7 +700,7 @@ client.on("interactionCreate", async (interaction) => {
       `Editing **${field}** for product \`${productId}\`.\n` +
       `Send the new value in this channel within 60 seconds.\n` +
       `Type \`cancel\` to stop.`,
-    ephemeral: true
+    flags: MessageFlags.Ephemeral
   });
 
   const filter = (m) => m.author.id === interaction.user.id;
@@ -711,14 +711,14 @@ client.on("interactionCreate", async (interaction) => {
   }).catch(() => null);
 
   if (!collected || !collected.size) {
-    return interaction.followUp({ content: "Timed out.", ephemeral: true });
+    return interaction.followUp({ content: "Timed out.", flags: MessageFlags.Ephemeral });
   }
 
   const replyMsg = collected.first();
   const newValueRaw = (replyMsg.content || "").trim();
 
-  if (!newValueRaw) return interaction.followUp({ content: "Empty value. Cancelled.", ephemeral: true });
-  if (newValueRaw.toLowerCase() === "cancel") return interaction.followUp({ content: "Cancelled.", ephemeral: true });
+  if (!newValueRaw) return interaction.followUp({ content: "Empty value. Cancelled.", flags: MessageFlags.Ephemeral });
+  if (newValueRaw.toLowerCase() === "cancel") return interaction.followUp({ content: "Cancelled.", flags: MessageFlags.Ephemeral });
 
   function normalizeHub(h) {
     const clean = String(h || "").trim().toLowerCase();
@@ -735,20 +735,19 @@ client.on("interactionCreate", async (interaction) => {
     if (!fixed) {
       return interaction.followUp({
         content: "Invalid hub. Use: Orion, Nova Lighting, Sunlight Solutions.",
-        ephemeral: true
+        flags: MessageFlags.Ephemeral
       });
     }
     newValue = fixed;
   }
 
   try {
-    // Ensure devProductId is unique
     if (field === "devProductId") {
       const existing = await Product.findOne({ devProductId: String(newValue) }).lean();
       if (existing && String(existing._id) !== String(productId)) {
         return interaction.followUp({
           content: "That DevProductId is already used by another product.",
-          ephemeral: true
+          flags: MessageFlags.Ephemeral
         });
       }
     }
@@ -756,11 +755,11 @@ client.on("interactionCreate", async (interaction) => {
     const updated = await Product.findByIdAndUpdate(
       productId,
       { $set: { [field]: newValue } },
-      { new: true }
+      { returnDocument: "after" }
     ).lean();
 
     if (!updated) {
-      return interaction.followUp({ content: "Product not found.", ephemeral: true });
+      return interaction.followUp({ content: "Product not found.", flags: MessageFlags.Ephemeral });
     }
 
     const newEmbed = new EmbedBuilder()
@@ -780,10 +779,10 @@ client.on("interactionCreate", async (interaction) => {
 
     await interaction.message.edit({ embeds: [newEmbed] }).catch(() => {});
 
-    return interaction.followUp({ content: `✅ Updated **${field}**.`, ephemeral: true });
+    return interaction.followUp({ content: `✅ Updated **${field}**.`, flags: MessageFlags.Ephemeral });
   } catch (err) {
     console.error("editproduct interaction error:", err);
-    return interaction.followUp({ content: "❌ Failed to update. Check logs.", ephemeral: true });
+    return interaction.followUp({ content: "❌ Failed to update. Check logs.", flags: MessageFlags.Ephemeral });
   }
 });
 // ----------------------------------------------------
