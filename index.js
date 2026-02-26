@@ -676,7 +676,116 @@ client.on("guildMemberAdd", async (member) => {
       .setTimestamp()
   );
 });
+//// dkdkdkdkdk
+client.on("interactionCreate", async (interaction) => {
+  if (!interaction.isStringSelectMenu()) return;
+  if (!interaction.customId.startsWith("editproduct:")) return;
 
+  const productId = interaction.customId.split(":")[1];
+  const field = interaction.values?.[0];
+
+  const allowedFields = new Set(["name", "description", "imageId", "devProductId", "hub"]);
+  if (!allowedFields.has(field)) {
+    return interaction.reply({ content: "Invalid selection.", ephemeral: true });
+  }
+
+  // Admin only
+  const member = interaction.member;
+  if (!member?.permissions?.has(PermissionsBitField.Flags.Administrator)) {
+    return interaction.reply({ content: "No permission.", ephemeral: true });
+  }
+
+  await interaction.reply({
+    content:
+      `Editing **${field}** for product \`${productId}\`.\n` +
+      `Send the new value in this channel within 60 seconds.\n` +
+      `Type \`cancel\` to stop.`,
+    ephemeral: true
+  });
+
+  const filter = (m) => m.author.id === interaction.user.id;
+  const collected = await interaction.channel.awaitMessages({
+    filter,
+    max: 1,
+    time: 60000
+  }).catch(() => null);
+
+  if (!collected || !collected.size) {
+    return interaction.followUp({ content: "Timed out.", ephemeral: true });
+  }
+
+  const replyMsg = collected.first();
+  const newValueRaw = (replyMsg.content || "").trim();
+
+  if (!newValueRaw) return interaction.followUp({ content: "Empty value. Cancelled.", ephemeral: true });
+  if (newValueRaw.toLowerCase() === "cancel") return interaction.followUp({ content: "Cancelled.", ephemeral: true });
+
+  function normalizeHub(h) {
+    const clean = String(h || "").trim().toLowerCase();
+    if (clean === "orion") return "Orion";
+    if (clean === "nova lighting") return "Nova Lighting";
+    if (clean === "sunlight solutions") return "Sunlight Solutions";
+    return null;
+  }
+
+  let newValue = newValueRaw;
+
+  if (field === "hub") {
+    const fixed = normalizeHub(newValueRaw);
+    if (!fixed) {
+      return interaction.followUp({
+        content: "Invalid hub. Use: Orion, Nova Lighting, Sunlight Solutions.",
+        ephemeral: true
+      });
+    }
+    newValue = fixed;
+  }
+
+  try {
+    // Ensure devProductId is unique
+    if (field === "devProductId") {
+      const existing = await Product.findOne({ devProductId: String(newValue) }).lean();
+      if (existing && String(existing._id) !== String(productId)) {
+        return interaction.followUp({
+          content: "That DevProductId is already used by another product.",
+          ephemeral: true
+        });
+      }
+    }
+
+    const updated = await Product.findByIdAndUpdate(
+      productId,
+      { $set: { [field]: newValue } },
+      { new: true }
+    ).lean();
+
+    if (!updated) {
+      return interaction.followUp({ content: "Product not found.", ephemeral: true });
+    }
+
+    const newEmbed = new EmbedBuilder()
+      .setTitle("🛠 Edit Product")
+      .setDescription(
+        `**Current Product**\n` +
+        `• Name: **${updated.name || "Unnamed"}**\n` +
+        `• Description: ${updated.description || "None"}\n` +
+        `• Hub: **${updated.hub || "None"}**\n` +
+        `• ImageId: \`${updated.imageId || "None"}\`\n` +
+        `• DevProductId: \`${updated.devProductId || "None"}\`\n\n` +
+        `Select what you want to change from the dropdown.`
+      )
+      .setColor(0x00ffea)
+      .setFooter({ text: `ProductID: ${productId}` })
+      .setTimestamp();
+
+    await interaction.message.edit({ embeds: [newEmbed] }).catch(() => {});
+
+    return interaction.followUp({ content: `✅ Updated **${field}**.`, ephemeral: true });
+  } catch (err) {
+    console.error("editproduct interaction error:", err);
+    return interaction.followUp({ content: "❌ Failed to update. Check logs.", ephemeral: true });
+  }
+});
 // ----------------------------------------------------
 // MODMAIL (DM → STAFF CHANNEL)
 // ----------------------------------------------------
@@ -1658,39 +1767,41 @@ if (cmd === "!editproduct") {
     return message.reply("❌ You do not have permission to use this command.");
   }
 
-  const productId = args[1];
-  if (!productId) {
-    return message.reply("❌ Usage: `!editproduct <productId>`");
-  }
+  const productId = (args[1] || "").trim();
+  if (!productId) return message.reply("❌ Usage: `!editproduct <productId>`");
 
-  const product = await Product.findById(productId);
-  if (!product) {
-    return message.reply("❌ Invalid product ID.");
-  }
+  const product = await Product.findById(productId).lean().catch(() => null);
+  if (!product) return message.reply("❌ Invalid product ID.");
 
-  // Buttons
-  const row = new ActionRowBuilder().addComponents(
-    new StringSelectMenuBuilder()
-      .setCustomId("editproduct_menu")
-      .setPlaceholder("Select what you want to edit")
-      .addOptions([
-        { label: "Name", value: "name" },
-        { label: "Description", value: "description" },
-        { label: "ImageId", value: "imageId" },
-        { label: "DevProductId", value: "devProductId" },
-        { label: "Hub", value: "hub" }
-      ])
-  );
+  const menu = new StringSelectMenuBuilder()
+    .setCustomId(`editproduct:${productId}`) // store productId in the customId
+    .setPlaceholder("Select what you want to edit")
+    .addOptions([
+      { label: "Name", value: "name" },
+      { label: "Description", value: "description" },
+      { label: "Image ID", value: "imageId" },
+      { label: "Dev Product ID", value: "devProductId" },
+      { label: "Hub", value: "hub" }
+    ]);
+
+  const row = new ActionRowBuilder().addComponents(menu);
 
   const embed = new EmbedBuilder()
     .setTitle("🛠 Edit Product")
-    .setDescription(`Editing **${product.name}**\nSelect what you want to change.`)
-    .setColor(0x00ffea);
+    .setDescription(
+      `**Current Product**\n` +
+      `• Name: **${product.name || "Unnamed"}**\n` +
+      `• Description: ${product.description || "None"}\n` +
+      `• Hub: **${product.hub || "None"}**\n` +
+      `• ImageId: \`${product.imageId || "None"}\`\n` +
+      `• DevProductId: \`${product.devProductId || "None"}\`\n\n` +
+      `Select what you want to change from the dropdown.`
+    )
+    .setColor(0x00ffea)
+    .setFooter({ text: `ProductID: ${productId}` });
 
   return message.reply({ embeds: [embed], components: [row] });
 }
-
-
   // ⭐ !ResetVerify <RobloxUserId>
   if (cmd === "!resetverify") {
     const userId = args[1];
