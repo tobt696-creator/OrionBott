@@ -1481,7 +1481,33 @@ async function pickProductFromDropdown(message, products, title) {
 
   return productId || null;
 }
+async function pushManualLinksToMongo() {
+  const data = {
+    "767086310": "1092226514331901974",
+    "2010692028": "1144811100123181067",
+    "2500387883": "1327985133571276803",
+    "7166591497": "1465975271105757267",
+    "2690789706": "1180530069941268673",
+    "2687108158": "1190692291535446156",
+    "1709414759": "1465975271105757267"
+  };
 
+  const bulk = Object.entries(data).map(([robloxUserId, discordId]) => ({
+    updateOne: {
+      filter: { robloxUserId: String(robloxUserId) },
+      update: { $set: { discordId: String(discordId) } },
+      upsert: true
+    }
+  }));
+
+  const result = await Link.bulkWrite(bulk, { ordered: false });
+
+  console.log("Migration complete:", {
+    upserted: result.upsertedCount,
+    modified: result.modifiedCount,
+    matched: result.matchedCount
+  });
+}
 // ----------------------------------------
 // !grant
 // ----------------------------------------
