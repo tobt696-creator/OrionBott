@@ -13,7 +13,6 @@ const axios = require("axios");
 const fs = require("fs");
 const path = require("path");
 const express = require("express");
-const { MessageFlags } = require("discord.js");
 require("dotenv").config();
 const luamin = require("luamin");
 const app = express();
