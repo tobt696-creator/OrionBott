@@ -61,7 +61,6 @@ async function seedAllLinks() {
     "1709414759": "1465975271105757267"
   };
 
-  
   const operations = Object.entries(links).map(([robloxUserId, discordId]) => ({
     updateOne: {
       filter: { robloxUserId: String(robloxUserId) },
@@ -721,7 +720,7 @@ client.on("clientReady", () => {
 
   // ⭐ HEARTBEAT → Sends bot status to Railway every 5 seconds
   setInterval(() => {
-    axios.post("https://orionbot-production.up.railway.app/status", {
+    axios.post("https://orionbot-production-b06c.up.railway.app/status", {
       ping: Math.floor(Math.random() * 100),
       uptime: process.uptime(),
       version: "1.0.0"
@@ -1381,7 +1380,7 @@ const gate = `
 local HttpService = game:GetService("HttpService")
 local Players = game:GetService("Players")
 
-local API = "https://orionbot-production.up.railway.app"
+local API = "orionbot-production-b06c.up.railway.app"
 local PRODUCT_ID = "${productId}"
 
 local function allowed()
@@ -1803,7 +1802,7 @@ if (!res.data?.success) {
 if (cmd === "!downtime") {
   try {
     const res = await axios.post(
-      "https://orionbot-production.up.railway.app/downtime",
+      "https://orionbot-production-b06c.up.railway.app/downtime",
       { enabled: true },
       { headers: { "x-admin-key": process.env.ADMIN_KEY } }
     );
@@ -1824,7 +1823,7 @@ if (cmd === "!downtime") {
 if (cmd === "!undowntime") {
   try {
     const res = await axios.post(
-      "https://orionbot-production.up.railway.app/downtime",
+      "https://orionbot-production-b06c.up.railway.app/downtime",
       { enabled: false },
       { headers: { "x-admin-key": process.env.ADMIN_KEY } }
     );
@@ -1859,7 +1858,7 @@ if (cmd === "!removeproduct") {
   // Fetch current products from API
   let list = [];
   try {
-    const res = await axios.get("https://orionbot-production.up.railway.app/products");
+    const res = await axios.get("https://orionbot-production-b06c.up.railway.app/products");
     list = res.data.products || [];
   } catch (err) {
     console.error("Fetch products error:", err);
@@ -1896,7 +1895,7 @@ if (cmd === "!removeproduct") {
   const productId = askIdMsg.first().content.trim();
 
   try {
-    const res = await axios.post("https://orionbot-production.up.railway.app/removeProduct", {
+    const res = await axios.post("https://orionbot-production-b06c.up.railway.app/removeProduct", {
       productId
     });
 
@@ -2302,7 +2301,7 @@ if (cmd === "!editproduct") {
     const [title, description] = content.split("|").map(x => x.trim());
 
     try {
-      await axios.post("https://orionbot-production.up.railway.app/announce", {
+      await axios.post("https://orionbot-production-b06c.up.railway.app/announce", {
         title,
         description
       });
