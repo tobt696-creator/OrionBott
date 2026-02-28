@@ -1380,7 +1380,7 @@ const gate = `
 local HttpService = game:GetService("HttpService")
 local Players = game:GetService("Players")
 
-local API = "orionbot-production-b06c.up.railway.app"
+local API = "https://orionbot-production-b06c.up.railway.app"
 local PRODUCT_ID = "${productId}"
 
 local function allowed()
