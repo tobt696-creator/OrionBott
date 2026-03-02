@@ -1752,7 +1752,7 @@ const hubMsg = await ask(
 
   try {
 const res = await axios.post(
-  "https://orionbot-production.up.railway.app/addProduct",
+  "https://orionbot-production-b06c.up.railway.app/addProduct",
   {
     hub: hub,
     name: productName,
