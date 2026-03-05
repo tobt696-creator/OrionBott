@@ -462,7 +462,7 @@ app.get("/products", async (req, res) => {
       hub: p.hub, 
       name: p.name,
       description: p.description,
-      imageId: p.imageId,
+      imageUrl: `https://thumbnails.roblox.com/v1/assets?assetIds=${p.imageId}&size=420x420&format=Png`,
       devProductId: p.devProductId
     }));
 
@@ -891,7 +891,6 @@ if (field === "file") {
 
   for (const row of owners) {
     const discordId = linkedAccounts[row.userId];
-    if (!discordId) continue;
 
     const user = await client.users.fetch(discordId).catch(() => null);
     if (!user) continue;
