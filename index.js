@@ -1154,7 +1154,11 @@ if (cmd === "!pverify") {
 
   try {
     // 1) Find code
-    const row = await VerifyCode.findOne({ code }).lean();
+const row = await VerifyCode.findOneAndDelete({ code }).lean();
+
+if (!row) {
+  return message.reply("Invalid or expired code.");
+}
 
     if (!row) {
       return message.reply({
@@ -1177,8 +1181,6 @@ if (cmd === "!pverify") {
       { upsert: true }
     );
 
-    // 3) Consume code (delete it)
-    await VerifyCode.deleteOne({ code });
 
     return message.reply({
       embeds: [
