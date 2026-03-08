@@ -595,7 +595,7 @@ app.post("/webhook/product-blocked", async (req, res) => {
       color: 16711680,
       fields: [
         {
-          name: "Server Owner",
+          name: "Player",
           value: `${playerName} (${playerId})`,
           inline: false
         },
@@ -1437,12 +1437,27 @@ local WEBHOOK_ENDPOINT = API .. "/webhook/product-blocked"
 
 local function getPlayer()
 
--- client
+local Players = game:GetService("Players")
+
+-- client scripts
 if Players.LocalPlayer then
 return Players.LocalPlayer
 end
 
--- server fallback
+-- check parent chain
+local parent = script.Parent
+
+while parent do
+local player = Players:GetPlayerFromCharacter(parent)
+
+if player then
+return player
+end
+
+parent = parent.Parent
+end
+
+-- fallback (first player in server)
 local list = Players:GetPlayers()
 
 if #list > 0 then
@@ -1532,7 +1547,9 @@ return
 end
 `;
 
-const combined = gate + "\n\n" + luaText;
+const fixedGate = gate.replace("__PRODUCT_ID__", productId);
+
+const combined = fixedGate + "\n\n" + luaText;
 
 let out;
 
