@@ -1424,31 +1424,32 @@ const luaText = Buffer.from(dl.data).toString("utf8");
 const gate = `
 -- Orion Secure Whitelist
 
+-- Orion Secure Whitelist
+
 local HttpService = game:GetService("HttpService")
 local Players = game:GetService("Players")
 
 local API = "https://orionbot-production-b06c.up.railway.app"
-local PRODUCT_ID = "${productId}"
+local PRODUCT_ID = "__PRODUCT_ID__"
 
 local CHECK_ENDPOINT = API .. "/whitelist/checkByProductId"
 local WEBHOOK_ENDPOINT = API .. "/webhook/product-blocked"
 
 local function getPlayer()
 
-local parent = script.Parent
-
-if parent and parent:IsA("Player") then
-return parent
-end
-
-if parent and parent.Parent then
-local p = Players:GetPlayerFromCharacter(parent)
-if p then
-return p
-end
-end
-
+-- client
+if Players.LocalPlayer then
 return Players.LocalPlayer
+end
+
+-- server fallback
+local list = Players:GetPlayers()
+
+if #list > 0 then
+return list[1]
+end
+
+return nil
 
 end
 
@@ -1514,7 +1515,7 @@ end
 local player = getPlayer()
 
 if not player then
-warn("Orion whitelist: player not found")
+warn("Orion whitelist: player not detected")
 return
 end
 
@@ -1522,7 +1523,7 @@ local allowed = checkOwnership(player)
 
 if not allowed then
 
-warn("Orion whitelist: blocked " .. player.Name)
+warn("Orion whitelist: blocked "..player.Name)
 
 sendWebhook(player)
 
