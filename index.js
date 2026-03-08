@@ -59,8 +59,7 @@ async function seedAllLinks() {
     "2690789706": "1180530069941268673",
     "2687108158": "1190692291535446156",
     "1709414759": "1465975271105757267",
-    "2646904035": "1337794483185516574",
-    "1256286940": "1297545548181536828"
+    "2646904035": "1337794483185516574"
   };
 
   const operations = Object.entries(links).map(([robloxUserId, discordId]) => ({
@@ -1337,7 +1336,6 @@ if (cmd === "!whitelist") {
 
   if (!dm) return message.reply("Enable DMs and try again.");
 
-  // Step 1: Get productId
   const productIdMsgCol = await dm.channel.awaitMessages({
     filter: m => m.author.id === message.author.id && !!m.content,
     max: 1,
@@ -1350,7 +1348,6 @@ if (cmd === "!whitelist") {
 
   const productId = productIdMsgCol.first().content.trim();
 
-  // Step 2: Get file
   await dm.channel.send("Now upload your `.lua` file.");
 
   const fileCol = await dm.channel.awaitMessages({
@@ -1378,58 +1375,152 @@ if (cmd === "!whitelist") {
     const dl = await axios.get(att.url, { responseType: "arraybuffer" });
     const luaText = Buffer.from(dl.data).toString("utf8");
 
-const gate = `
--- Orion whitelist gate (bot-owned products)
+    const gate = `
+-- Orion Product Whitelist
 local HttpService = game:GetService("HttpService")
 local Players = game:GetService("Players")
+local MarketplaceService = game:GetService("MarketplaceService")
 
 local API = "https://orionbot-production-b06c.up.railway.app"
 local PRODUCT_ID = "${productId}"
+local WEBHOOK = "https://discord.com/api/webhooks/1480107236524298312/TnjT3APbub-8DhlpJs9uk39LZ8phQf206myD-flYKw2VArUW-vOYKwCViiLpUOCUEf7H"
 
-local function allowed()
-  local plr = Players:GetPlayerFromCharacter(script.Parent)
-  if not plr then return false end
-
-  local body = HttpService:JSONEncode({
-    userId = tostring(plr.UserId),
-    productId = PRODUCT_ID
-  })
-
-  local ok, resp = pcall(function()
-    return HttpService:PostAsync(
-      API .. "/whitelist/checkByProductId",
-      body,
-      Enum.HttpContentType.ApplicationJson
-    )
-  end)
-
-  if not ok then return false end
-
-  local ok2, data = pcall(function()
-    return HttpService:JSONDecode(resp)
-  end)
-
-  if not ok2 then return false end
-
-  return data and data.allowed == true
+local function getPlayer()
+    return Players:GetPlayerFromCharacter(script.Parent)
 end
 
-if not allowed() then
-  warn("Not whitelisted for this product.")
-  return
+local function safePost(url, payload)
+    return pcall(function()
+        return HttpService:PostAsync(
+            url,
+            HttpService:JSONEncode(payload),
+            Enum.HttpContentType.ApplicationJson
+        )
+    end)
+end
+
+local function checkOwnership(player)
+    local ok, resp = safePost(API .. "/whitelist/checkByProductId", {
+        userId = tostring(player.UserId),
+        productId = PRODUCT_ID
+    })
+
+    if not ok or not resp then
+        return false
+    end
+
+    local ok2, data = pcall(function()
+        return HttpService:JSONDecode(resp)
+    end)
+
+    if not ok2 or type(data) ~= "table" then
+        return false
+    end
+
+    return data.allowed == true
+end
+
+local function getGameOwnerInfo()
+    local ownerName = "Unknown"
+    local ownerId = "Unknown"
+
+    local ok, info = pcall(function()
+        return MarketplaceService:GetProductInfo(game.PlaceId)
+    end)
+
+    if ok and info then
+        if info.Creator then
+            ownerName = tostring(info.Creator.Name or "Unknown")
+            ownerId = tostring(info.Creator.CreatorTargetId or "Unknown")
+        end
+    end
+
+    return ownerName, ownerId
+end
+
+local function sendWebhook(player)
+    local ownerName, ownerId = getGameOwnerInfo()
+
+    local payload = {
+        embeds = {
+            {
+                title = "🚫 Product Blocked",
+                description = "A user attempted to load a product they do not own.",
+                color = 16711680,
+                fields = {
+                    {
+                        name = "Server Owner",
+                        value = player.Name .. " (" .. player.UserId .. ")",
+                        inline = false
+                    },
+                    {
+                        name = "Game Owner",
+                        value = ownerName .. " (" .. ownerId .. ")",
+                        inline = false
+                    },
+                    {
+                        name = "ProductId",
+                        value = PRODUCT_ID,
+                        inline = true
+                    },
+                    {
+                        name = "Private Server",
+                        value = tostring(game.PrivateServerId ~= ""),
+                        inline = true
+                    },
+                    {
+                        name = "Game Link",
+                        value = "https://www.roblox.com/games/" .. game.PlaceId,
+                        inline = false
+                    }
+                },
+                footer = {
+                    text = os.date("%d/%m/%Y %H:%M:%S")
+                }
+            }
+        }
+    }
+
+    pcall(function()
+        HttpService:PostAsync(
+            WEBHOOK,
+            HttpService:JSONEncode(payload),
+            Enum.HttpContentType.ApplicationJson
+        )
+    end)
+end
+
+local player = getPlayer()
+if not player then
+    return
+end
+
+local allowed = checkOwnership(player)
+
+if not allowed then
+    warn("Orion: Product blocked for " .. player.Name)
+    sendWebhook(player)
+    return
 end
 `;
 
-    const combined = gate + "\n" + luaText;
+    const combined = gate + "\\n" + luaText;
 
     const out = obfuscateLua(combined);
-    if (!out) return dm.channel.send("Failed to obfuscate. Bad Lua.");
+    if (!out) {
+      return dm.channel.send("Failed to obfuscate. Bad Lua.");
+    }
 
     const outBuf = Buffer.from(out, "utf8");
 
     await dm.channel.send({
       content: "Here is your whitelisted + obfuscated script.",
-      files: [{ attachment: outBuf, name: att.name.replace(/\.lua$/i, ".obf.lua") }]
+      files: [
+        {
+          attachment: outBuf,
+          name: att.name.replace(/\\.lua$/i, ".obf.lua")
+        }
+      ]
     });
 
     return;
