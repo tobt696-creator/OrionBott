@@ -1038,15 +1038,15 @@ client.on("messageCreate", async (message) => {
   // ----------------------------------------------------
   // AUTO-MOD
   // ----------------------------------------------------
-  const badWords = ["fuck", "shit", "bitch"];
+  const badWords = ["6777", "wow so 67", "67"];
   if (badWords.some(w => message.content.toLowerCase().includes(w))) {
     try { await message.delete(); } catch {}
 
     message.channel.send({
       embeds: [
         new EmbedBuilder()
-          .setTitle("🛡️ Auto-Moderation")
-          .setDescription(`${message.author}, that word is not allowed.`)
+          .setTitle("🛡️ 67 Police")
+          .setDescription(`${message.author}, NO SAYING 67.`)
           .setColor(0xff0000)
       ]
     });
