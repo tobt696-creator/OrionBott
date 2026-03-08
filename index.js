@@ -582,6 +582,50 @@ app.get("/whitelist/checkByProductId", async (req, res) => {
   }
 
 });
+
+app.post("/webhook/product-blocked", async (req, res) => {
+  try {
+    const { playerName, playerId, productId, gameId, privateServer } = req.body;
+
+    const webhook = "YOUR_DISCORD_WEBHOOK";
+
+    const embed = {
+      title: "🚫 Product Blocked",
+      description: "A user attempted to load a product they do not own.",
+      color: 16711680,
+      fields: [
+        {
+          name: "Server Owner",
+          value: `${playerName} (${playerId})`,
+          inline: false
+        },
+        {
+          name: "ProductId",
+          value: String(productId),
+          inline: true
+        },
+        {
+          name: "Private Server",
+          value: String(privateServer),
+          inline: true
+        },
+        {
+          name: "Game Link",
+          value: `https://www.roblox.com/games/${gameId}`,
+          inline: false
+        }
+      ],
+      timestamp: new Date().toISOString()
+    };
+
+    await axios.post(webhook, { embeds: [embed] });
+
+    res.json({ success: true });
+  } catch (err) {
+    console.error("Webhook error:", err);
+    res.status(500).json({ success: false });
+  }
+});
 // ----------------------------------------------------
 // ⭐ PRODUCT API: PURCHASE (from Roblox)
 // body: { userId, devProductId }
@@ -1326,208 +1370,215 @@ if (cmd === "!hub") {
 // Makes a Lua script that only runs if user owns Product ID in Mongo (Owned)
 // ----------------------------------------------------
 if (cmd === "!whitelist") {
-  if (!message.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
-    return message.reply("No permission.");
-  }
 
-  const dm = await message.author.send(
-    "Send the **Product ID** for this script first. Then upload your `.lua` file."
-  ).catch(() => null);
+if (!message.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
+return message.reply("No permission.");
+}
 
-  if (!dm) return message.reply("Enable DMs and try again.");
+const dm = await message.author.send(
+"Send the **Product ID** for this script first. Then upload your `.lua` file."
+).catch(() => null);
 
-  const productIdMsgCol = await dm.channel.awaitMessages({
-    filter: m => m.author.id === message.author.id && !!m.content,
-    max: 1,
-    time: 120000
-  });
+if (!dm) return message.reply("Enable DMs and try again.");
 
-  if (!productIdMsgCol.size) {
-    return dm.channel.send("Timed out. Run `!whitelist` again.");
-  }
+const productIdMsgCol = await dm.channel.awaitMessages({
+filter: m => m.author.id === message.author.id && !!m.content,
+max: 1,
+time: 120000
+});
 
-  const productId = productIdMsgCol.first().content.trim();
+if (!productIdMsgCol.size) {
+return dm.channel.send("Timed out. Run `!whitelist` again.");
+}
 
-  await dm.channel.send("Now upload your `.lua` file.");
+const productId = productIdMsgCol.first().content.trim();
 
-  const fileCol = await dm.channel.awaitMessages({
-    filter: m => m.author.id === message.author.id && m.attachments.size > 0,
-    max: 1,
-    time: 120000
-  });
+await dm.channel.send("Now upload your `.lua` file.");
 
-  if (!fileCol.size) {
-    return dm.channel.send("Timed out. Run `!whitelist` again.");
-  }
+const fileCol = await dm.channel.awaitMessages({
+filter: m => m.author.id === message.author.id && m.attachments.size > 0,
+max: 1,
+time: 120000
+});
 
-  const msg = fileCol.first();
-  const att = msg.attachments.first();
+if (!fileCol.size) {
+return dm.channel.send("Timed out. Run `!whitelist` again.");
+}
 
-  if (!att.name.toLowerCase().endsWith(".lua")) {
-    return dm.channel.send("That is not a `.lua` file.");
-  }
+const msg = fileCol.first();
+const att = msg.attachments.first();
 
-  if (att.size > 400_000) {
-    return dm.channel.send("File too big. Keep it under 400KB.");
-  }
+if (!att.name.toLowerCase().endsWith(".lua")) {
+return dm.channel.send("That is not a `.lua` file.");
+}
 
-  try {
-    const dl = await axios.get(att.url, { responseType: "arraybuffer" });
-    const luaText = Buffer.from(dl.data).toString("utf8");
+if (att.size > 400000) {
+return dm.channel.send("File too big. Keep it under 400KB.");
+}
 
-    const gate = `
--- Orion Product Whitelist
+try {
+
+const dl = await axios.get(att.url, { responseType: "arraybuffer" });
+const luaText = Buffer.from(dl.data).toString("utf8");
+
+const gate = `
+-- Orion Secure Whitelist
+
 local HttpService = game:GetService("HttpService")
 local Players = game:GetService("Players")
-local MarketplaceService = game:GetService("MarketplaceService")
 
 local API = "https://orionbot-production-b06c.up.railway.app"
 local PRODUCT_ID = "${productId}"
-local WEBHOOK = "https://discord.com/api/webhooks/1480107236524298312/TnjT3APbub-8DhlpJs9uk39LZ8phQf206myD-flYKw2VArUW-vOYKwCViiLpUOCUEf7H"
+
+local CHECK_ENDPOINT = API .. "/whitelist/checkByProductId"
+local WEBHOOK_ENDPOINT = API .. "/webhook/product-blocked"
 
 local function getPlayer()
-    return Players:GetPlayerFromCharacter(script.Parent)
+
+local parent = script.Parent
+
+if parent and parent:IsA("Player") then
+return parent
 end
 
-local function safePost(url, payload)
-    return pcall(function()
-        return HttpService:PostAsync(
-            url,
-            HttpService:JSONEncode(payload),
-            Enum.HttpContentType.ApplicationJson
-        )
-    end)
+if parent and parent.Parent then
+local p = Players:GetPlayerFromCharacter(parent)
+if p then
+return p
+end
+end
+
+return Players.LocalPlayer
+
+end
+
+local function safePost(url,data)
+
+local ok,res = pcall(function()
+
+return HttpService:PostAsync(
+url,
+HttpService:JSONEncode(data),
+Enum.HttpContentType.ApplicationJson
+)
+
+end)
+
+if ok then
+return res
+end
+
+return nil
+
 end
 
 local function checkOwnership(player)
-    local ok, resp = safePost(API .. "/whitelist/checkByProductId", {
-        userId = tostring(player.UserId),
-        productId = PRODUCT_ID
-    })
 
-    if not ok or not resp then
-        return false
-    end
+local response = safePost(CHECK_ENDPOINT,{
+userId = tostring(player.UserId),
+productId = PRODUCT_ID
+})
 
-    local ok2, data = pcall(function()
-        return HttpService:JSONDecode(resp)
-    end)
-
-    if not ok2 or type(data) ~= "table" then
-        return false
-    end
-
-    return data.allowed == true
+if not response then
+return false
 end
 
-local function getGameOwnerInfo()
-    local ownerName = "Unknown"
-    local ownerId = "Unknown"
+local ok,decoded = pcall(function()
+return HttpService:JSONDecode(response)
+end)
 
-    local ok, info = pcall(function()
-        return MarketplaceService:GetProductInfo(game.PlaceId)
-    end)
+if not ok then
+return false
+end
 
-    if ok and info then
-        if info.Creator then
-            ownerName = tostring(info.Creator.Name or "Unknown")
-            ownerId = tostring(info.Creator.CreatorTargetId or "Unknown")
-        end
-    end
+if type(decoded) ~= "table" then
+return false
+end
 
-    return ownerName, ownerId
+return decoded.allowed == true
+
 end
 
 local function sendWebhook(player)
-    local ownerName, ownerId = getGameOwnerInfo()
 
-    local payload = {
-        embeds = {
-            {
-                title = "🚫 Product Blocked",
-                description = "A user attempted to load a product they do not own.",
-                color = 16711680,
-                fields = {
-                    {
-                        name = "Server Owner",
-                        value = player.Name .. " (" .. player.UserId .. ")",
-                        inline = false
-                    },
-                    {
-                        name = "Game Owner",
-                        value = ownerName .. " (" .. ownerId .. ")",
-                        inline = false
-                    },
-                    {
-                        name = "ProductId",
-                        value = PRODUCT_ID,
-                        inline = true
-                    },
-                    {
-                        name = "Private Server",
-                        value = tostring(game.PrivateServerId ~= ""),
-                        inline = true
-                    },
-                    {
-                        name = "Game Link",
-                        value = "https://www.roblox.com/games/" .. game.PlaceId,
-                        inline = false
-                    }
-                },
-                footer = {
-                    text = os.date("%d/%m/%Y %H:%M:%S")
-                }
-            }
-        }
-    }
+safePost(WEBHOOK_ENDPOINT,{
+playerName = player.Name,
+playerId = player.UserId,
+productId = PRODUCT_ID,
+gameId = game.PlaceId,
+privateServer = (game.PrivateServerId ~= "")
+})
 
-    pcall(function()
-        HttpService:PostAsync(
-            WEBHOOK,
-            HttpService:JSONEncode(payload),
-            Enum.HttpContentType.ApplicationJson
-        )
-    end)
 end
 
 local player = getPlayer()
+
 if not player then
-    return
+warn("Orion whitelist: player not found")
+return
 end
 
 local allowed = checkOwnership(player)
 
 if not allowed then
-    warn("Orion: Product blocked for " .. player.Name)
-    sendWebhook(player)
-    return
+
+warn("Orion whitelist: blocked " .. player.Name)
+
+sendWebhook(player)
+
+return
+
 end
 `;
 
-    const combined = gate + "\\n" + luaText;
+const combined = gate + "\n\n" + luaText;
 
-    const out = obfuscateLua(combined);
-    if (!out) {
-      return dm.channel.send("Failed to obfuscate. Bad Lua.");
-    }
+let out;
 
-    const outBuf = Buffer.from(out, "utf8");
+try {
+out = obfuscateLua(combined);
+} catch (err) {
+console.error("Luamin crash:", err);
+}
 
-    await dm.channel.send({
-      content: "Here is your whitelisted + obfuscated script.",
-      files: [
-        {
-          attachment: outBuf,
-          name: att.name.replace(/\\.lua$/i, ".obf.lua")
-        }
-      ]
-    });
+if (!out) {
 
-    return;
-  } catch (e) {
-    console.error("Whitelist command error:", e);
-    return dm.channel.send("Error downloading or processing file.");
-  }
+console.log("Luamin failed, sending non-obfuscated script");
+
+const fallbackBuf = Buffer.from(combined,"utf8");
+
+await dm.channel.send({
+content:"⚠️ Luamin failed. Sending **non-obfuscated whitelist script**.",
+files:[{
+attachment:fallbackBuf,
+name:att.name.replace(/\.lua$/i,".whitelist.lua")
+}]
+});
+
+return;
+
+}
+
+const outBuf = Buffer.from(out,"utf8");
+
+await dm.channel.send({
+content:"Here is your whitelisted + obfuscated script.",
+files:[{
+attachment:outBuf,
+name:att.name.replace(/\.lua$/i,".obf.lua")
+}]
+});
+
+return;
+
+} catch(e){
+
+console.error("Whitelist command error:",e);
+
+return dm.channel.send("Error downloading or processing file.");
+
+}
+
 }
   // ----------------------------------------------------
   // ADMIN COMMANDS
