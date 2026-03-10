@@ -59,8 +59,7 @@ async function seedAllLinks() {
     "2690789706": "1180530069941268673",
     "2687108158": "1190692291535446156",
     "1709414759": "1465975271105757267",
-    "2646904035": "1337794483185516574",
-    "156": "1471142730066301203"
+    "2646904035": "1337794483185516574"
   };
 
   const operations = Object.entries(links).map(([robloxUserId, discordId]) => ({
@@ -1410,7 +1409,6 @@ const gate = `
 -- Orion Secure Whitelist
 
 local HttpService = game:GetService("HttpService")
-local Players = game:GetService("Players")
 
 local API = "https://orionbot-production-b06c.up.railway.app"
 local PRODUCT_ID = "__PRODUCT_ID__"
@@ -1418,19 +1416,14 @@ local PRODUCT_ID = "__PRODUCT_ID__"
 local CHECK_ENDPOINT = API .. "/whitelist/checkByProductId"
 local WEBHOOK_ENDPOINT = API .. "/webhook/product-blocked"
 
-local function getPlayer()
-
 local Players = game:GetService("Players")
 
--- client scripts
-if Players.LocalPlayer then
-return Players.LocalPlayer
-end
+local function getPlayer()
 
--- check parent chain
 local parent = script.Parent
 
 while parent do
+
 local player = Players:GetPlayerFromCharacter(parent)
 
 if player then
@@ -1438,13 +1431,7 @@ return player
 end
 
 parent = parent.Parent
-end
 
--- fallback (first player in server)
-local list = Players:GetPlayers()
-
-if #list > 0 then
-return list[1]
 end
 
 return nil
@@ -1946,6 +1933,9 @@ if (!res.data?.success) {
 
 // ⭐ !downtime
 if (cmd === "!downtime") {
+  if (!message.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
+return message.reply("No permission.");
+}
   try {
     const res = await axios.post(
       "https://orionbot-production-b06c.up.railway.app/downtime",
@@ -1988,6 +1978,9 @@ if (cmd === "!undowntime") {
 
   // ⭐ !removeproduct
 if (cmd === "!removeproduct") {
+  if (!message.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
+return message.reply("No permission.");
+
   const dm = await message.author.send({
     embeds: [
       new EmbedBuilder()
