@@ -1038,7 +1038,7 @@ client.on("messageCreate", async (message) => {
   // ----------------------------------------------------
   // AUTO-MOD
   // ----------------------------------------------------
-  const badWords = ["6777", "wow so 67", "67"];
+  const badWords = ["", "", ""];
   if (badWords.some(w => message.content.toLowerCase().includes(w))) {
     try { await message.delete(); } catch {}
 
