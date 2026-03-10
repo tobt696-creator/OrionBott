@@ -1035,24 +1035,6 @@ client.on("messageCreate", async (message) => {
     return;
   }
 
-  // ----------------------------------------------------
-  // AUTO-MOD
-  // ----------------------------------------------------
-  const badWords = ["", "", ""];
-  if (badWords.some(w => message.content.toLowerCase().includes(w))) {
-    try { await message.delete(); } catch {}
-
-    message.channel.send({
-      embeds: [
-        new EmbedBuilder()
-          .setTitle("🛡️ 67 Police")
-          .setDescription(`${message.author}, NO SAYING 67.`)
-          .setColor(0xff0000)
-      ]
-    });
-
-    return;
-  }
 
 // ----------------------------------------------------
 // !profile [@user | userId]
