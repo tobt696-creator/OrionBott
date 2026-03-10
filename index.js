@@ -1976,10 +1976,11 @@ if (cmd === "!undowntime") {
   }
 }
 
-  // ⭐ !removeproduct
+// ⭐ !removeproduct
 if (cmd === "!removeproduct") {
   if (!message.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
-return message.reply("No permission.");
+    return message.reply("No permission.");
+  }
 
   const dm = await message.author.send({
     embeds: [
