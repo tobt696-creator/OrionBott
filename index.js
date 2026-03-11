@@ -1149,7 +1149,10 @@ const robloxUserId = link?.robloxUserId;
             "`!grant` – grants product\n" +
             "`!whitelist` – Hides the script\n" +
             "`!Hub` – Shows all products and IDs\n" +
-            "`!editproduct` – Edits products\n" 
+            "`!editproduct` – Edits products\n" +
+            "`!grantall` - grant all products to a user\n" +
+            "`!revokeall` - revoke all products from a user"
+
         },
         {
           name: "📢 Roblox Integration",
@@ -1643,6 +1646,35 @@ async function pickProductFromDropdown(message, products, title) {
   return productId || null;
 }
 
+if (cmd === "!grantall") {
+
+  if (!message.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
+    return message.reply("No permission.");
+  }
+
+  const targetDiscordId = await askForTargetDiscordId(message);
+  if (!targetDiscordId) return;
+
+  const linkRow = await Link.findOne({ discordId: String(targetDiscordId).trim() }).lean();
+  const robloxUserId = linkRow?.robloxUserId;
+
+  if (!robloxUserId) return message.reply("User isn’t linked.");
+
+  const products = await Product.find().lean();
+  if (!products.length) return message.reply("No products found.");
+
+  for (const product of products) {
+    await Owned.updateOne(
+      { userId: String(robloxUserId), productId: product._id },
+      { $setOnInsert: { userId: String(robloxUserId), productId: product._id } },
+      { upsert: true }
+    );
+  }
+
+  return message.reply(
+    `✅ Granted **ALL PRODUCTS (${products.length})** to <@${targetDiscordId}>`
+  );
+}
 // ----------------------------------------
 // !grant
 // ----------------------------------------
@@ -1739,7 +1771,28 @@ try {
   return message.reply("❌ Failed to grant product.");
 }
 }
+if (cmd === "!revokeall") {
 
+  if (!message.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
+    return message.reply("No permission.");
+  }
+
+  const targetDiscordId = await askForTargetDiscordId(message);
+  if (!targetDiscordId) return;
+
+  const linkRow = await Link.findOne({ discordId: String(targetDiscordId).trim() }).lean();
+  const robloxUserId = linkRow?.robloxUserId;
+
+  if (!robloxUserId) return message.reply("User isn’t linked.");
+
+  const result = await Owned.deleteMany({
+    userId: String(robloxUserId)
+  });
+
+  return message.reply(
+    `🗑 Removed **${result.deletedCount} products** from <@${targetDiscordId}>`
+  );
+}
 // ----------------------------------------
 // !revoke
 // ----------------------------------------
