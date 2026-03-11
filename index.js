@@ -1663,16 +1663,72 @@ if (cmd === "!grantall") {
   const products = await Product.find().lean();
   if (!products.length) return message.reply("No products found.");
 
+  const targetUser = await client.users.fetch(targetDiscordId).catch(() => null);
+
+  let granted = 0;
+
   for (const product of products) {
+
     await Owned.updateOne(
       { userId: String(robloxUserId), productId: product._id },
       { $setOnInsert: { userId: String(robloxUserId), productId: product._id } },
       { upsert: true }
     );
+
+    granted++;
+
+    if (targetUser) {
+      try {
+
+        const fileBuffer = Buffer.from(product.fileDataBase64, "base64");
+
+        await targetUser.send({
+          embeds: [
+            new EmbedBuilder()
+              .setTitle("🎁 Product Granted")
+              .setDescription(product.description || "You have been granted a product.")
+              .setColor(0x00ffea)
+          ],
+          files: [
+            {
+              attachment: fileBuffer,
+              name: product.fileName
+            }
+          ]
+        });
+
+      } catch (e) {
+        console.error("GrantAll DM failed:", e);
+      }
+    }
+  }
+
+  try {
+
+    const logChannel = await client.channels.fetch(PRODUCT_LOG_CHANNEL).catch(() => null);
+
+    if (logChannel && logChannel.isTextBased()) {
+
+      const logEmbed = new EmbedBuilder()
+        .setTitle("All Products Granted")
+        .setColor(0x00ffea)
+        .addFields(
+          { name: "User", value: `<@${targetDiscordId}> (\`${targetDiscordId}\`)`, inline: false },
+          { name: "Total Products", value: String(granted), inline: false },
+          { name: "Granted By", value: `${message.author.tag}`, inline: false }
+        )
+        .setTimestamp();
+
+      await logChannel.send({ embeds: [logEmbed] });
+
+    }
+
+  } catch (e) {
+    console.error("GrantAll log error:", e);
   }
 
   return message.reply(
-    `✅ Granted **ALL PRODUCTS (${products.length})** to <@${targetDiscordId}>`
+    `✅ Granted **${granted} products** to <@${targetDiscordId}>`
   );
 }
 // ----------------------------------------
@@ -1789,6 +1845,48 @@ if (cmd === "!revokeall") {
     userId: String(robloxUserId)
   });
 
+  const targetUser = await client.users.fetch(targetDiscordId).catch(() => null);
+
+  if (targetUser) {
+    try {
+      await targetUser.send({
+        embeds: [
+          new EmbedBuilder()
+            .setTitle("⚠️ Products Removed")
+            .setDescription(
+              "All of your products have been removed by an administrator.\n\n" +
+              "If you believe this was done in error, please open a support ticket."
+            )
+            .setColor(0xff0000)
+            .setTimestamp()
+        ]
+      });
+    } catch (e) {
+      console.error("RevokeAll DM failed:", e);
+    }
+  }
+
+  try {
+    const logChannel = await client.channels.fetch(PRODUCT_LOG_CHANNEL).catch(() => null);
+
+    if (logChannel && logChannel.isTextBased()) {
+      const logEmbed = new EmbedBuilder()
+        .setTitle("All Products Revoked")
+        .setColor(0xff0000)
+        .addFields(
+          { name: "User", value: `<@${targetDiscordId}> (\`${targetDiscordId}\`)`, inline: false },
+          { name: "Products Removed", value: String(result.deletedCount), inline: false },
+          { name: "Removed By", value: `${message.author.tag}`, inline: false }
+        )
+        .setTimestamp();
+
+      await logChannel.send({ embeds: [logEmbed] });
+    }
+
+  } catch (e) {
+    console.error("RevokeAll log error:", e);
+  }
+
   return message.reply(
     `🗑 Removed **${result.deletedCount} products** from <@${targetDiscordId}>`
   );
@@ -1836,6 +1934,9 @@ if (!robloxUserId) return message.reply("User isn’t linked.");
 
 // ⭐ !addproduct
 if (cmd === "!addproduct") {
+  if (!message.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
+  return message.reply("No permission.");
+}
   const dm = await message.author.send({
     embeds: [
       new EmbedBuilder()
