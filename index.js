@@ -456,40 +456,22 @@ app.post("/removeProduct", async (req, res) => {
 // ----------------------------------------------------
 app.get("/products", async (req, res) => {
   try {
-    const products = await Product.find();
+    const products = await Product.find().lean();
 
-const list = [];
+    const list = products.map(p => ({
+      id: String(p._id),
+      hub: p.hub,
+      name: p.name,
+      description: p.description,
+      imageId: p.imageId,
+      devProductId: p.devProductId
+    }));
 
-for (const p of products) {
-
-  let imageUrl = null;
-
-  try {
-    const thumb = await axios.get(
-      `https://thumbnails.roblox.com/v1/assets?assetIds=${p.imageId}&size=420x420&format=Png&isCircular=false`
-    );
-
-    imageUrl = thumb.data?.data?.[0]?.imageUrl || null;
-
-  } catch (e) {
-    console.error("Thumbnail fetch failed:", e);
-  }
-
-  list.push({
-    id: p._id,
-    hub: p.hub,
-    name: p.name,
-    description: p.description,
-    imageUrl,
-    devProductId: p.devProductId
-  });
-}
-
-    return res.json({ products: list });
+    res.json({ products: list });
 
   } catch (err) {
     console.error("Fetch Products Error:", err);
-    return res.json({ products: [] });
+    res.json({ products: [] });
   }
 });
 
