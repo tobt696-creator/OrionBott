@@ -34,6 +34,11 @@ function obfuscateLua(luaText) {
     return null;
   }
 }
+const whitelistSchema = new mongoose.Schema({
+  robloxUserId: { type: String, unique: true, index: true }
+});
+
+const Whitelist = mongoose.model("Whitelist", whitelistSchema);
 
 const verifyCodeSchema = new mongoose.Schema({
   code: { type: String, unique: true, required: true },
@@ -59,9 +64,7 @@ async function seedAllLinks() {
     "2690789706": "1180530069941268673",
     "2687108158": "1190692291535446156",
     "1709414759": "1465975271105757267",
-    "2646904035": "1337794483185516574",
-    "143839646": "787314379153997824",
-    "547518646": "724337303627104266"
+    "2646904035": "1337794483185516574"
   };
 
   const operations = Object.entries(links).map(([robloxUserId, discordId]) => ({
@@ -298,6 +301,31 @@ app.get("/link/:userId", async (req, res) => {
   } catch (e) {
     console.error("GET /link error:", e);
     return res.status(500).json({ linked: false });
+  }
+});
+
+app.get("/join-check/:userId", async (req, res) => {
+  try {
+
+    const userId = String(req.params.userId);
+
+    const downtime = await getDowntimeEnabled();
+
+    if (!downtime) {
+      return res.json({ allowed: true });
+    }
+
+    const row = await Whitelist.findOne({ robloxUserId: userId }).lean();
+
+    if (row) {
+      return res.json({ allowed: true });
+    }
+
+    return res.json({ allowed: false });
+
+  } catch (err) {
+    console.error("Join check error:", err);
+    return res.json({ allowed: false });
   }
 });
 // ----------------------------------------------------
@@ -2113,6 +2141,9 @@ return message.reply("No permission.");
 
 // ⭐ !undowntime
 if (cmd === "!undowntime") {
+  if (!message.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
+  return message.reply("No permission.");
+}
   try {
     const res = await axios.post(
       "https://orionbot-production-b06c.up.railway.app/downtime",
@@ -2341,6 +2372,9 @@ if (cmd === "!editproduct") {
 
   // ⭐ !Kick
   if (cmd === "!kick") {
+    if (!message.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
+  return message.reply("No permission.");
+}
     const member = message.mentions.members.first();
     if (!member) {
       return message.reply({
@@ -2378,6 +2412,9 @@ if (cmd === "!editproduct") {
 
   // ⭐ !Ban
   if (cmd === "!ban") {
+    if (!message.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
+  return message.reply("No permission.");
+}
     const member = message.mentions.members.first();
     if (!member) {
       return message.reply({
@@ -2415,6 +2452,9 @@ if (cmd === "!editproduct") {
 
   // ⭐ !Warn
   if (cmd === "!warn") {
+    if (!message.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
+  return message.reply("No permission.");
+}
     const member = message.mentions.members.first();
     const reason = args.slice(2).join(" ") || "No reason";
 
@@ -2458,6 +2498,9 @@ if (cmd === "!editproduct") {
 
   // ⭐ !AdminDM
   if (cmd === "!admindm") {
+    if (!message.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
+  return message.reply("No permission.");
+}
     const member = message.mentions.members.first();
     const msg = args.slice(2).join(" ");
 
@@ -2499,6 +2542,9 @@ if (cmd === "!editproduct") {
 
   // ⭐ !Embed
   if (cmd === "!embed") {
+    if (!message.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
+  return message.reply("No permission.");
+}
     const content = args.slice(1).join(" ");
     if (!content.includes("|")) {
       return message.reply({
@@ -2527,6 +2573,9 @@ if (cmd === "!editproduct") {
 
   // ⭐ !Giveaway
   if (cmd === "!giveaway") {
+    if (!message.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
+  return message.reply("No permission.");
+}
     const duration = parseInt(args[1]);
     const prize = args.slice(2).join(" ");
 
@@ -2582,6 +2631,9 @@ if (cmd === "!editproduct") {
 
   // ⭐ !RblxAnnounce
   if (cmd === "!rblxannounce") {
+    if (!message.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
+  return message.reply("No permission.");
+}
     const content = args.slice(1).join(" ");
     if (!content.includes("|")) {
       return message.reply({
