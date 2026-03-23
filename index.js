@@ -22,7 +22,7 @@ const cors = require("cors");
 app.use(cors({
   origin: "https://oriondevelopmentrblx.com"
 }));
-// ⭐ IMPORTANT: Let Railway choose the port
+// ⭐ IMPORTANT: Let Railway choose the por
 const PORT = process.env.PORT || 3000;
 const mongoose = require("mongoose");
 // lumain ///
