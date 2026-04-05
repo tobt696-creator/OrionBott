@@ -85,20 +85,7 @@ async function seedAllLinks() {
   });
 }
 
-client.on("ready", async () => {
-  const guild = client.guilds.cache.get("YOUR_GUILD_ID"); // ✅ define guild
 
-  const userId = "1092226514331901974";
-  const roleId = "1339690805211959427";
-
-  const member = await guild.members.fetch(userId);
-  const role = guild.roles.cache.get(roleId);
-
-  if (role) {
-    await member.roles.add(role);
-    console.log("Role assigned!");
-  }
-});
 // ----------------------------------------------------
 // DATA PERSISTENCE (Railway Volume)
 // ----------------------------------------------------
