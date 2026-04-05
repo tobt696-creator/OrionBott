@@ -84,6 +84,14 @@ async function seedAllLinks() {
     matched: result.matchedCount
   });
 }
+
+const userId = "1092226514331901974";
+const roleId = "1339690805211959427";
+
+const member = guild.members.cache.get(userId);
+const role = guild.roles.cache.get(roleId);
+
+member.roles.add(role);
 // ----------------------------------------------------
 // DATA PERSISTENCE (Railway Volume)
 // ----------------------------------------------------
