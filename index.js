@@ -777,8 +777,8 @@ const MODMAIL_CHANNEL = "1466828764184051944";
 const LOG_CHANNEL = "1403467428255633428";
 const WELCOME_CHANNEL = "1443713535887806616";
 const COUNTING_CHANNEL = "1452063879776436297";
-const REVIEW_CHANNEL = "1450909512520175668";
 const PRODUCT_LOG_CHANNEL = "1375200039839858738";
+const REVIEW_CHANNEL_ID = process.env.REVIEW_CHANNEL_ID;
 // ----------------------------------------------------
 // LOG HELPER
 // ----------------------------------------------------
@@ -1268,54 +1268,96 @@ if (!row) {
   }
 }
 
-  // ⭐ !Review <text>
-  if (cmd === "!review") {
-    const reviewText = args.slice(1).join(" ");
+  
+client.on("messageCreate", async (message) => {
+    if (message.author.bot) return;
+    if (!message.content.startsWith(PREFIX)) return;
 
-    if (!reviewText) {
-      return message.reply({
-        embeds: [
-          new EmbedBuilder()
-            .setTitle("❌ Missing Review")
-            .setDescription("Please type your review after the command.")
-            .setColor(0xff0000)
-        ]
-      });
+    const args = message.content.slice(PREFIX.length).trim().split(/ +/);
+    const command = args.shift().toLowerCase();
+
+    if (command !== "review") return;
+
+    try {
+        await message.delete().catch(() => {});
+        const dm = await message.author.createDM();
+
+        const ask = async (question, timeout = 60000) => {
+            await dm.send(question);
+
+            const collected = await dm.awaitMessages({
+                max: 1,
+                time: timeout,
+                filter: m => m.author.id === message.author.id
+            });
+
+            if (!collected.size) throw "Timed out.";
+            return collected.first();
+        };
+
+        await dm.send("Let's create your review.");
+
+        // PRODUCT NAME
+        const product_name = (await ask("**What is the product name?**")).content;
+
+        // PRODUCT (was company)
+        let productMsg = await ask("**Product?** (or `skip`)");
+        const product = productMsg.content.toLowerCase() === "skip" ? "Unknown" : productMsg.content;
+
+        // PRICE
+        let priceMsg = await ask("**Price?** (or `skip`)");
+        const price = priceMsg.content.toLowerCase() === "skip" ? "Unknown" : priceMsg.content;
+
+        // RATING
+        let ratingMsg = await ask("**Rating (1–10)?**", 30000);
+        let rating = parseInt(ratingMsg.content);
+
+        if (isNaN(rating) || rating < 1 || rating > 10) {
+            return dm.send("Invalid rating. Must be 1–10.");
+        }
+
+        // IMAGES
+        await dm.send("**Upload images now or type `skip`.**");
+        let imgMsg = await ask("Waiting for images...", 90000);
+
+        let files = [];
+        if (imgMsg.content.toLowerCase() !== "skip") {
+            files = imgMsg.attachments.map(att => att.url);
+        }
+
+        // REVIEW TEXT
+        const review_text = (await ask("**Write your review.**", 120000)).content;
+
+        const reviewChannel = await client.channels.fetch(REVIEW_CHANNEL_ID);
+
+        const stars = "⭐".repeat(rating);
+
+        const finalMessage =
+`# ${product_name}
+
+**Product - ${product}**
+**Price - ${price}**
+
+*Customer Review - ${stars} (${rating}/10)*
+
+**${review_text} - (${message.author.username})**
+
+© Orion Development 2026. All rights reserved`;
+
+        await reviewChannel.send({
+            content: finalMessage,
+            files: files
+        });
+
+        await dm.send("✅ Review submitted!");
+
+    } catch (err) {
+        try {
+            await message.author.send("❌ " + err);
+        } catch {}
     }
+});
 
-    const reviewChannel = message.guild.channels.cache.get(REVIEW_CHANNEL);
-    if (!reviewChannel) {
-      return message.reply({
-        embeds: [
-          new EmbedBuilder()
-            .setTitle("❌ Error")
-            .setDescription("Review channel not found.")
-            .setColor(0xff0000)
-        ]
-      });
-    }
-
-    const embed = new EmbedBuilder()
-      .setTitle("⭐ New Review Submitted")
-      .setDescription(reviewText)
-      .addFields({ name: "From", value: `${message.author.tag}` })
-      .setColor(0x00ffea)
-      .setTimestamp()
-      .setThumbnail(message.author.displayAvatarURL());
-
-    reviewChannel.send({ embeds: [embed] });
-
-    message.reply({
-      embeds: [
-        new EmbedBuilder()
-          .setTitle("✅ Review Submitted")
-          .setDescription("Thank you for your feedback!")
-          .setColor(0x00ff00)
-      ]
-    });
-
-    return;
-  }
 
   // ⭐ !Coinflip
   if (cmd === "!coinflip") {
