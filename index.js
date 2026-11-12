@@ -1587,17 +1587,14 @@ return;
 const outBuf = Buffer.from(out,"utf8");
 
 await dm.channel.send({
-content:"Here is your whitelisted + obfuscated script.",
-files:[{
-attachment:outBuf,
-name:att.name.replace(/\.lua$/i,".obf.lua")
-}]
-const client = new Client({
-    intents: [
-        GatewayIntentBits.Guilds,
-        GatewayIntentBits.GuildMembers
-    ]
+  content: "Here is your whitelisted + obfuscated script.",
+  files: [{
+    attachment: outBuf,
+    name: att.name.replace(/\.lua$/i, ".obf.lua")
+  }]
 });
+
+return;
 
 return;
 
@@ -1648,7 +1645,10 @@ async function askForTargetDiscordId(message) {
 }
 
 async function pickProductFromDropdown(message, products, title) {
-  const list = products.slice(0, 25); // Discord limit per select menu
+  const list = products.slice(0, 25);
+
+  if (!list.length) return null;
+
   const options = list.map(p => ({
     label: (p.name || "Unnamed").slice(0, 100),
     description: (p.hub ? `Hub: ${p.hub}` : "No hub").slice(0, 100),
@@ -1663,7 +1663,12 @@ async function pickProductFromDropdown(message, products, title) {
   const row = new ActionRowBuilder().addComponents(menu);
 
   const msg = await message.reply({
-    embeds: [new EmbedBuilder().setTitle(title).setDescription("Select a product from the dropdown.").setColor(0x00ffea)],
+    embeds: [
+      new EmbedBuilder()
+        .setTitle(title)
+        .setDescription("Select a product from the dropdown.")
+        .setColor(0x00ffea)
+    ],
     components: [row]
   });
 
@@ -1672,22 +1677,23 @@ async function pickProductFromDropdown(message, products, title) {
     time: 60000,
     filter: i => i.user.id === message.author.id
   }).catch(() => null);
-client.once("ready", async () => {
-    console.log(`Logged in as ${client.user.tag}`);
 
   if (!interaction) {
-    await msg.edit({ content: "Timed out.", embeds: [], components: [] }).catch(() => {});
+    await msg.edit({
+      content: "Timed out.",
+      embeds: [],
+      components: []
+    }).catch(() => {});
+
     return null;
   }
-    for (const [guildId, guild] of client.guilds.cache) {
-        console.log(`Scanning server: ${guild.name}`);
 
-  const productId = interaction.values?.[0];
-  await interaction.deferUpdate().catch(() => {});
+  const productId = interaction.values[0];
+
+  await interaction.deferUpdate();
   await msg.edit({ components: [] }).catch(() => {});
-        const members = await guild.members.fetch();
 
-  return productId || null;
+  return productId;
 }
 
 if (cmd === "!grantall") {
