@@ -1457,7 +1457,7 @@ local Players = game:GetService("Players")
 local function getPlayer()
 
 local parent = script.Parent
-const { Client, GatewayIntentBits } = require("discord.js");
+
 
 while parent do
 
